@@ -173,9 +173,11 @@ const start = async () => {
     if (spendTxPushResult.match('non-BIP68-final')) {
       Log(`You still need to wait for a few blocks (up to 5) to push the tx.`);
       Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
+    } else {
+      //You may get non-bip68 final now. You need to wait 5 blocks
+      const txId = spendTx.getId();
+      Log(`SUCCESS! <a href="${EXPLORER}/tx/${txId}">Check the result.</a>`);
     }
-    //You may get non-bip68 final now. You need to wait 5 blocks
-    Log(`See tx pushed: ${EXPLORER}/tx/${spendTx.getId()}`);
   } else {
     Log(`Not yet! Use https://bitcoinfaucet.uo1.net to get some sats:`);
     Log(`${wpkhAddress}: ${wpkhUtxo?.[0] ? 'Funded!' : 'NOT funded'}`);
