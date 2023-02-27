@@ -106,12 +106,13 @@ const start = async () => {
   });
   const wshAddress = wshDescriptor.getAddress();
 
-  console.log(`Fund your addresses ${wpkhAddress} and ${wshAddress} using \
-https://bitcoinfaucet.uo1.net/`);
+  console.log(`Use https://bitcoinfaucet.uo1.net/ to fund your addresses: \
+<${wpkhAddress}> and <${wshAddress}>`);
 
   //Now spend it:
   const psbt = new Psbt({ network });
   const psbtInputDescriptors: descriptors.DescriptorInterface[] = [];
+  console.log(`Checking if already funded...`);
   const wpkhUtxo = await (
     await fetch(`${EXPLORER}/api/address/${wpkhAddress}/utxo`)
   ).json();
@@ -176,7 +177,9 @@ https://bitcoinfaucet.uo1.net/`);
     //You may get non-bip68 final now. You need to wait 5 blocks
     console.log(`See tx pushed: ${EXPLORER}/tx/${spendTx.getId()}`);
   } else {
-    console.log(`Not funded or already spent: ${wpkhAddress} & ${wshAddress}`);
+    console.log(`Not funded or already spent: \
+${wpkhAddress}: ${wpkhUtxo?.[0] ? 'yes' : 'no'} / \
+${wshAddress}: ${wshUtxo?.[0] ? 'yes' : 'no'}`);
   }
   //Save to localStorage
   if (isWeb) localStorage.setItem('ledger', JSON.stringify(ledgerState));
