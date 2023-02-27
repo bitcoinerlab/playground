@@ -15,8 +15,9 @@ const Log = (message: string) => {
   if (logsElement) logsElement.innerHTML += `<p>${message}</p>`;
   console.log(message.replace(/<[^>]*>?/gm, '')); //strip html tags
 };
-const ledgerStorage = isWeb && localStorage.getItem('ledger');
+
 //Ledger is stateless. We store state in localStorage. Deserialize it if found:
+const ledgerStorage = isWeb && localStorage.getItem('ledger');
 const ledgerState = ledgerStorage
   ? JSON.parse(ledgerStorage, (_key, value) =>
       value instanceof Object && value.type === 'Buffer'
@@ -35,12 +36,11 @@ const DIGEST =
 const POLICY = `\
 and(and(and(pk(@ledger),pk(@soft)),older(${OLDER})),sha256(${DIGEST}))`;
 
-const WSH_ORIGIN_PATH = `/69420'/1'/0'`; //This could be any random path.
-const WSH_KEY_PATH = `/0/0`;
+const WSH_ORIGIN_PATH = `/69420'/1'/0'`; //This can be any path you like.
+const WSH_KEY_PATH = `/0/0`; //Same as above.
 
-const SOFT_MNEMONIC =
-  'abandon abandon abandon abandon abandon abandon ' +
-  'abandon abandon abandon abandon abandon about';
+const SOFT_MNEMONIC = `abandon abandon abandon abandon abandon abandon abandon \
+abandon abandon abandon abandon about`;
 const masterNode = BIP32.fromSeed(mnemonicToSeedSync(SOFT_MNEMONIC), network);
 
 let transport: any = null;
@@ -67,10 +67,8 @@ const start = async () => {
       minVersion: '2.1.0'
     });
   } catch (err) {
-    if (transport) {
-      await transport.close();
-      transport = null;
-    }
+    await transport.close();
+    transport = null;
     Log(`Open the Bitcoin Test App, version >= 2.1.0 and \
 <a href="javascript:start();">try again</a>.`);
     return;
@@ -78,20 +76,22 @@ const start = async () => {
   Log(`Ledger successfully connected.`);
   const ledgerClient = new descriptors.ledger.AppClient(transport);
 
-  const wpkhExpression = await descriptors.scriptExpressions.wpkhLedger({
-    ledgerClient,
-    ledgerState,
-    network,
-    account: 0,
-    change: 0,
-    index: 0
-  });
   const wpkhDescriptor = new Descriptor({
-    expression: wpkhExpression,
+    expression: await descriptors.scriptExpressions.wpkhLedger({
+      ledgerClient,
+      ledgerState,
+      network,
+      account: 0,
+      change: 0,
+      index: 0
+    }),
     network
   });
   const wpkhAddress = wpkhDescriptor.getAddress();
 
+  //Now let's prepare the wsh utxo:
+  const { miniscript, issane } = compilePolicy(POLICY);
+  if (!issane) throw new Error(`Error: miniscript not sane`);
   const ledgerKeyExpression = await descriptors.keyExpressionLedger({
     ledgerClient,
     ledgerState,
@@ -103,8 +103,6 @@ const start = async () => {
     originPath: WSH_ORIGIN_PATH,
     keyPath: WSH_KEY_PATH
   });
-  const { miniscript, issane } = compilePolicy(POLICY);
-  if (!issane) throw new Error(`Error: miniscript not sane`);
   const wshExpression = `wsh(${miniscript
     .replace('@ledger', ledgerKeyExpression)
     .replace('@soft', softKeyExpression)})`;
@@ -126,8 +124,8 @@ const start = async () => {
     await fetch(`${EXPLORER}/api/address/${wshAddress}/utxo`)
   ).json();
   if (wpkhUtxo?.[0] && wshUtxo?.[0]) {
-    Log(`Successfully funded. Now let's spend them. Go to your Ledger now! \
-You need to register the Policy (only once) and then accept spending 2 utxos.`);
+    Log(`Successfully funded. Now let's spend them. Go to your Ledger now! You \
+may need to register the Policy (only once) and then accept spending 2 utxos.`);
     let txHex = await (
       await fetch(`${EXPLORER}/api/tx/${wpkhUtxo?.[0].txid}/hex`)
     ).text();
@@ -140,7 +138,7 @@ You need to register the Policy (only once) and then accept spending 2 utxos.`);
     inputValue += wpkhUtxo[0].value;
     i = wshDescriptor.updatePsbt({ psbt, txHex, vout: wshUtxo[0].vout });
     psbtInputDescriptors[i] = wshDescriptor;
-    //We'll send the funds to one of ledgers internal addresses:
+    //We'll send the funds to one of our Ledger's internal (change) addresses:
     const finalAddress = new Descriptor({
       expression: await descriptors.scriptExpressions.wpkhLedger({
         ledgerClient,
@@ -152,7 +150,7 @@ You need to register the Policy (only once) and then accept spending 2 utxos.`);
       }),
       network
     }).getAddress();
-    //Give the miners 1000 sats
+    //Be nice. Give the miners 1000 sats :)
     psbt.addOutput({ address: finalAddress, value: inputValue - 1000 });
 
     //Register Ledger policies of non-standard descriptors. Auto-skips if exists
@@ -183,10 +181,10 @@ You need to register the Policy (only once) and then accept spending 2 utxos.`);
     console.log({ pushedHex: spendTx.toHex() });
     Log(`Tx pushed with result: ${spendTxPushResult}`);
     if (spendTxPushResult.match('non-BIP68-final')) {
+      //You may get non-bip68 final now. You need to wait 5 blocks
       Log(`You still need to wait for a few more blocks (up to ${BLOCKS}).`);
       Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
     } else {
-      //You may get non-bip68 final now. You need to wait 5 blocks
       const txId = spendTx.getId();
       Log(`SUCCESS! <a href="${EXPLORER}/tx/${txId}">Check the result.</a>`);
     }
