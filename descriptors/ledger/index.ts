@@ -25,7 +25,7 @@ const start = async () => {
   });
 };
 document.body.innerHTML =
-  '<div style="display: inline-block; padding: 10px 20px; background-color: #007bff; color: #fff; border: none; border-radius: 4px; cursor: pointer;" id="start">Connect your Ledger, open Bitcoin Test 2.1 App & click to start</div>';
+  'Connect your Ledger, open Bitcoin Test 2.1 App and then:<br/><div style="margin-top:20px; display: inline-block; padding: 10px 20px; background-color: #007bff; color: #fff; border: none; border-radius: 4px; cursor: pointer;" id="start">Click to start</div>';
 
 document.getElementById('start')!.addEventListener('click', start);
 
