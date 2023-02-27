@@ -11,7 +11,13 @@ const network = networks.testnet;
 const EXPLORER = 'https://blockstream.info/testnet';
 const isWeb = typeof window !== 'undefined';
 const ledgerStorage = isWeb && localStorage.getItem('ledger');
-const ledgerState = ledgerStorage ? JSON.parse(ledgerStorage) : {};
+const ledgerState = ledgerStorage
+  ? JSON.parse(ledgerStorage, (_key, value) =>
+      value instanceof Object && value.type === 'Buffer'
+        ? new Buffer(value.data)
+        : value
+    )
+  : {};
 const FEE = 1000;
 const BLOCKS = 5;
 const OLDER = olderEncode({ blocks: BLOCKS });
