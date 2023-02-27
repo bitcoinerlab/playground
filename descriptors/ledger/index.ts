@@ -1,22 +1,15 @@
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
-import _NodeTransport from '@ledgerhq/hw-transport-node-hid';
-import _WebTransport from '@ledgerhq/hw-transport-webhid';
 import { /*Psbt,*/ networks } from 'bitcoinjs-lib';
 import { mnemonicToSeedSync } from 'bip39';
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
-// @ts-ignore
-const NodeTransport = _NodeTransport?.default || _NodeTransport;
-// @ts-ignore
-const WebTransport = _WebTransport?.default || _WebTransport;
 
 const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 
-const ledgerState = {};
-
 const network = networks.testnet;
+const ledgerState = {};
 //const UTXO_VALUE = 1e4;
 //const FEE = 1000;
 const BLOCKS = 5;
@@ -36,9 +29,14 @@ const SOFT_MNEMONIC =
   'abandon abandon abandon abandon abandon about';
 const masterNode = BIP32.fromSeed(mnemonicToSeedSync(SOFT_MNEMONIC), network);
 
-const start = async (Transport: any) => {
+const start = async () => {
+  let Transport = await (typeof document !== 'undefined'
+    ? import('@ledgerhq/hw-transport-webhid')
+    : import('@ledgerhq/hw-transport-node-hid'));
+  while (Transport.default) Transport = Transport.default as any;
   let transport;
   try {
+    //@ts-ignore
     transport = await Transport.create();
     console.log(`Ledger successfully connected`);
   } catch (err) {
@@ -90,10 +88,8 @@ const start = async (Transport: any) => {
 if (typeof document !== 'undefined') {
   document.body.innerHTML = `Connect your Ledger, open Bitcoin Test 2.1 App and:  
 <a href="#" id="start">Click to start</a>`;
-  document
-    .getElementById('start')!
-    .addEventListener('click', () => start(WebTransport));
-} else start(NodeTransport);
+  document.getElementById('start')!.addEventListener('click', start);
+} else start();
 
 /*
 
