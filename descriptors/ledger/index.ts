@@ -9,7 +9,9 @@ const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 
 const network = networks.testnet;
 const EXPLORER = 'https://blockstream.info/testnet';
-const ledgerState = {};
+const isWeb = typeof window !== 'undefined';
+const ledgerStorage = isWeb && localStorage.getItem('ledger');
+const ledgerState = ledgerStorage ? JSON.parse(ledgerStorage) : {};
 const FEE = 1000;
 const BLOCKS = 5;
 const OLDER = olderEncode({ blocks: BLOCKS });
@@ -30,14 +32,12 @@ const SOFT_MNEMONIC =
 const masterNode = BIP32.fromSeed(mnemonicToSeedSync(SOFT_MNEMONIC), network);
 
 const start = async () => {
-  let Transport = await (typeof document !== 'undefined'
-    ? import('@ledgerhq/hw-transport-webhid')
-    : import('@ledgerhq/hw-transport-node-hid'));
-  while (Transport.default) Transport = Transport.default as any;
+  let Tr = await import(`@ledgerhq/hw-transport-${isWeb ? 'web' : 'node-'}hid`);
+  while (Tr.default) Tr = Tr.default as any;
   let transport;
   try {
     //@ts-ignore
-    transport = await Transport.create();
+    transport = await Tr.create();
     console.log(`Ledger successfully connected`);
   } catch (err) {
     throw new Error(`Error: Ledger device not detected`);
@@ -156,9 +156,10 @@ https://bitcoinfaucet.uo1.net/`);
   } else {
     console.log(`You still need to fund ${wpkhAddress} and ${wshAddress}`);
   }
+  if (isWeb) localStorage.setItem('ledger', JSON.stringify(ledgerState));
 };
 
-if (typeof document !== 'undefined') {
+if (isWeb) {
   document.body.innerHTML = `Connect your Ledger, open Bitcoin Test 2.1 App and:  
 <a href="#" id="start">Click to start</a>`;
   document.getElementById('start')!.addEventListener('click', start);
