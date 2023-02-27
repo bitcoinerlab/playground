@@ -25,45 +25,47 @@ console.log(`We start with:`, { address: descriptorLegacy.getAddress(), TXID });
 
 //Let's get the utxo info (txHex and vout) of the Legacy address.
 const EXPLORER = 'https://blockstream.info/testnet';
-const txHex = await (await fetch(`${EXPLORER}/api/tx/${TXID}/hex`)).text();
-const txJson = (await (await fetch(`${EXPLORER}/api/tx/${TXID}`)).json()) as {
-  vout: { scriptpubkey: string; value: number }[];
-};
-const txOuts = txJson.vout;
-const vout = txOuts.findIndex(
-  txOut =>
-    txOut.scriptpubkey === descriptorLegacy.getScriptPubKey().toString('hex')
-);
-const initialValue = txOuts[vout]!.value; //1679037
-console.log('This is the utxo to spend :', { txHex, vout, initialValue });
+(async () => {
+  const txHex = await (await fetch(`${EXPLORER}/api/tx/${TXID}/hex`)).text();
+  const txJson = (await (await fetch(`${EXPLORER}/api/tx/${TXID}`)).json()) as {
+    vout: { scriptpubkey: string; value: number }[];
+  };
+  const txOuts = txJson.vout;
+  const vout = txOuts.findIndex(
+    txOut =>
+      txOut.scriptpubkey === descriptorLegacy.getScriptPubKey().toString('hex')
+  );
+  const initialValue = txOuts[vout]!.value; //1679037
+  console.log('This is the utxo to spend :', { txHex, vout, initialValue });
 
-//Define the Segwit descriptor where we will move the sats above:
-const descriptorSegwit = new Descriptor({
-  expression: wpkhBIP32({ masterNode, network, account: 0, keyPath: '/1/0' }),
-  network
-});
+  //Define the Segwit descriptor where we will move the sats above:
+  const descriptorSegwit = new Descriptor({
+    expression: wpkhBIP32({ masterNode, network, account: 0, keyPath: '/1/0' }),
+    network
+  });
 
-//Let's create a transaction (Partially Signed Bitcoin Transaction) now:
-const psbt = new Psbt({ network });
-//Use the Legacy descriptor to update the transaction with the input info:
-const legacyInputNumber = descriptorLegacy.updatePsbt({ psbt, vout, txHex });
-//Now add our Segwit address as the new output & give some FEE to the miners
-const finalValue = initialValue - FEE;
-const finalAddress = descriptorSegwit.getAddress();
-psbt.addOutput({ address: finalAddress, value: finalValue });
-console.log('Move the funds to:', { finalAddress, finalValue });
+  //Let's create a transaction (Partially Signed Bitcoin Transaction) now:
+  const psbt = new Psbt({ network });
+  //Use the Legacy descriptor to update the transaction with the input info:
+  const legacyInputNumber = descriptorLegacy.updatePsbt({ psbt, vout, txHex });
+  //Now add our Segwit address as the new output & give some FEE to the miners
+  const finalValue = initialValue - FEE;
+  const finalAddress = descriptorSegwit.getAddress();
+  psbt.addOutput({ address: finalAddress, value: finalValue });
+  console.log('Move the funds to:', { finalAddress, finalValue });
 
-//Sign the transaction, finalize it and submit it to the miners:
-descriptors.signers.signBIP32({ psbt, masterNode });
-descriptorLegacy.finalizePsbtInput({ psbt, index: legacyInputNumber });
-const spendTx = psbt.extractTransaction();
-//It won't be accepted (again) when you try, indeed.
-const spendTxPushResult = await (
-  await fetch('https://blockstream.info/testnet/api/tx', {
-    method: 'POST',
-    body: spendTx.toHex()
-  })
-).text();
+  //Sign the transaction, finalize it and submit it to the miners:
+  descriptors.signers.signBIP32({ psbt, masterNode });
+  descriptorLegacy.finalizePsbtInput({ psbt, index: legacyInputNumber });
+  const spendTx = psbt.extractTransaction();
+  //It won't be accepted (again) when you try, indeed.
+  const spendTxPushResult = await (
+    await fetch('https://blockstream.info/testnet/api/tx', {
+      method: 'POST',
+      body: spendTx.toHex()
+    })
+  ).text();
 
-console.log({ body: spendTx.toHex(), spendTxPushResult });
-console.log(`Tx pushed:`, { url: `${EXPLORER}/tx/${spendTx.getId()}` });
+  console.log({ body: spendTx.toHex(), spendTxPushResult });
+  console.log(`Tx pushed:`, { url: `${EXPLORER}/tx/${spendTx.getId()}` });
+})();
