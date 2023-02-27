@@ -11,6 +11,7 @@ const network = networks.testnet;
 const EXPLORER = 'https://blockstream.info/testnet';
 const isWeb = typeof window !== 'undefined';
 const ledgerStorage = isWeb && localStorage.getItem('ledger');
+//Ledger is stateless. We store state in localStorage. Deserialize it if found:
 const ledgerState = ledgerStorage
   ? JSON.parse(ledgerStorage, (_key, value) =>
       value instanceof Object && value.type === 'Buffer'
@@ -18,7 +19,6 @@ const ledgerState = ledgerStorage
         : value
     )
   : {};
-const FEE = 1000;
 const BLOCKS = 5;
 const OLDER = olderEncode({ blocks: BLOCKS });
 const PREIMAGE =
@@ -42,7 +42,6 @@ const start = async () => {
   while (Tr.default) Tr = Tr.default as any;
   let transport;
   try {
-    //@ts-ignore
     transport = await Tr.create();
     console.log(`Ledger successfully connected`);
   } catch (err) {
@@ -93,7 +92,7 @@ const start = async () => {
   });
   const wshAddress = wshDescriptor.getAddress();
 
-  console.log(`Fund ${wpkhAddress} and ${wshAddress} using \
+  console.log(`Fund your addresses ${wpkhAddress} and ${wshAddress} using \
 https://bitcoinfaucet.uo1.net/`);
 
   //Now spend it:
@@ -106,7 +105,7 @@ https://bitcoinfaucet.uo1.net/`);
     await fetch(`${EXPLORER}/api/address/${wshAddress}/utxo`)
   ).json();
   if (wpkhUtxo?.[0] && wshUtxo?.[0]) {
-    console.log(`Successfully funded`);
+    console.log(`Successfully funded!`);
     let txHex = await (
       await fetch(`${EXPLORER}/api/tx/${wpkhUtxo?.[0].txid}/hex`)
     ).text();
@@ -131,14 +130,15 @@ https://bitcoinfaucet.uo1.net/`);
       }),
       network
     }).getAddress();
-    psbt.addOutput({ address: finalAddress, value: inputValue - FEE });
-    //=============
-    //Register Ledger policies of non-standard descriptors.
+    //Give the miners 1000 sats
+    psbt.addOutput({ address: finalAddress, value: inputValue - 1000 });
+
+    //Register Ledger policies of non-standard descriptors. Auto-skips if exists
     await descriptors.ledger.registerLedgerWallet({
       ledgerClient,
       ledgerState,
       descriptor: wshDescriptor,
-      policyName: 'BitcoinerLab Playground'
+      policyName: 'BitcoinerLab'
     });
     await descriptors.signers.signLedger({
       ledgerClient,
@@ -148,6 +148,8 @@ https://bitcoinfaucet.uo1.net/`);
     });
     //Now sign the PSBT with the BIP32 node (the software wallet)
     descriptors.signers.signBIP32({ psbt, masterNode });
+
+    //Finalize the tx and submit it to the blockchain
     descriptors.finalizePsbt({ psbt, descriptors: psbtInputDescriptors });
     const spendTx = psbt.extractTransaction();
     const spendTxPushResult = await (
@@ -160,13 +162,14 @@ https://bitcoinfaucet.uo1.net/`);
     //You may get non-bip68 final now. You need to wait 5 blocks
     console.log(`Tx pushed:`, { url: `${EXPLORER}/tx/${spendTx.getId()}` });
   } else {
-    console.log(`You still need to fund ${wpkhAddress} and ${wshAddress}`);
+    console.log(`Not funded or already spent: ${wpkhAddress} & ${wshAddress}`);
   }
+  //Save to localStorage
   if (isWeb) localStorage.setItem('ledger', JSON.stringify(ledgerState));
 };
 
 if (isWeb) {
-  document.body.innerHTML = `Connect your Ledger, open Bitcoin Test 2.1 App and:  
+  document.body.innerHTML = `Connect a Ledger, open Bitcoin Test 2.1 App and:  
 <a href="#" id="start">Click to start</a>`;
   document.getElementById('start')!.addEventListener('click', start);
 } else start();
