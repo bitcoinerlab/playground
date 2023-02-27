@@ -23,7 +23,7 @@ if (isWeb) {
   const originalLog = console.log;
   console.log = (message: string) => {
     if (document.getElementById('logs'))
-      document.getElementById('logs')!.innerHTML += message + '<br/>';
+      document.getElementById('logs')!.innerHTML += `<p>${message}</p>`;
     originalLog(message);
   };
 }
@@ -172,9 +172,9 @@ https://bitcoinfaucet.uo1.net/`);
         body: spendTx.toHex()
       })
     ).text();
-    console.log({ tx: spendTx.toHex(), spendTxPushResult });
+    console.log(`Pushed: ${spendTx.toHex()} with result: ${spendTxPushResult}`);
     //You may get non-bip68 final now. You need to wait 5 blocks
-    console.log(`Tx pushed:`, { url: `${EXPLORER}/tx/${spendTx.getId()}` });
+    console.log(`See tx pushed: ${EXPLORER}/tx/${spendTx.getId()}`);
   } else {
     console.log(`Not funded or already spent: ${wpkhAddress} & ${wshAddress}`);
   }
