@@ -180,6 +180,7 @@ const start = async () => {
   //Save to localStorage
   if (isWeb) localStorage.setItem('ledger', JSON.stringify(ledgerState));
 };
+if (isWeb) (window as any).start = start;
 
 if (isWeb) {
   document.body.innerHTML = `Connect a Ledger, open Bitcoin Test 2.1 App and:  
