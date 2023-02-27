@@ -64,6 +64,7 @@ const start = async () => {
       transport = null;
       Log(`Not detected. Connect and <a href="javascript:start();">retry</a>.`);
     }
+    return;
   }
   const ledgerClient = new descriptors.ledger.AppClient(transport);
 
