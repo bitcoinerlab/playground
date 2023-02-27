@@ -1,75 +1,104 @@
-//import * as ecc from '@bitcoinerlab/secp256k1';
-import { ledger } from '@bitcoinerlab/descriptors';
-const { assertLedgerApp } = ledger;
-//import NodeTransport from '@ledgerhq/hw-transport-node-hid';
-import WebTransport from '@ledgerhq/hw-transport-webhid';
-//import { networks } from 'bitcoinjs-lib';
-//import { mnemonicToSeedSync } from 'bip39';
-//const { encode: olderEncode } = require('bip68');
+import * as secp256k1 from '@bitcoinerlab/secp256k1';
+import * as descriptors from '@bitcoinerlab/descriptors';
+import { compilePolicy } from '@bitcoinerlab/miniscript';
+import _NodeTransport from '@ledgerhq/hw-transport-node-hid';
+import _WebTransport from '@ledgerhq/hw-transport-webhid';
+import { /*Psbt,*/ networks } from 'bitcoinjs-lib';
+import { mnemonicToSeedSync } from 'bip39';
+// @ts-ignore
+import { encode as olderEncode } from 'bip68';
+// @ts-ignore
+const NodeTransport = _NodeTransport?.default || _NodeTransport;
+// @ts-ignore
+const WebTransport = _WebTransport?.default || _WebTransport;
 
-//const network = networks.testnet;
+const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 
-const start = async () => {
+const ledgerState = {};
+
+const network = networks.testnet;
+//const UTXO_VALUE = 1e4;
+//const FEE = 1000;
+const BLOCKS = 5;
+const OLDER = olderEncode({ blocks: BLOCKS });
+//const PREIMAGE =
+//  '107661134f21fc7c02223d50ab9eb3600bc3ffc3712423a1e47bb1f9a9dbf55f';
+const DIGEST =
+  '6c60f404f8167a38fc70eaf8aa17ac351023bef86bcb9d1086a19afe95bd5333';
+
+const POLICY = `\
+and(and(and(pk(@ledger),pk(@soft)),older(${OLDER})),sha256(${DIGEST}))`;
+
+const WSH_ORIGIN_PATH = `/69420'/1'/0'`; //This could be any random path.
+
+const SOFT_MNEMONIC =
+  'abandon abandon abandon abandon abandon abandon ' +
+  'abandon abandon abandon abandon abandon about';
+const masterNode = BIP32.fromSeed(mnemonicToSeedSync(SOFT_MNEMONIC), network);
+
+const start = async (Transport: any) => {
   let transport;
   try {
-    transport = await WebTransport.create();
-    console.log(`Ledger Successfully connected`);
+    transport = await Transport.create();
+    console.log(`Ledger successfully connected`);
   } catch (err) {
     throw new Error(`Error: Ledger device not detected`);
   }
   //Throw if not running Bitcoin Test >= 2.1.0
-  await assertLedgerApp({
+  await descriptors.ledger.assertLedgerApp({
     transport,
     name: 'Bitcoin Test',
     minVersion: '2.1.0'
   });
-};
-document.body.innerHTML = `Connect your Ledger, open Bitcoin Test 2.1 App and:  
-<div style="display: inline-block; padding: 10px; color: blue; cursor: pointer;"
-  id="start">Click to start</div>`;
+  const ledgerClient = new descriptors.ledger.AppClient(transport);
 
-document.getElementById('start')!.addEventListener('click', start);
+  const pkhExpression = await descriptors.scriptExpressions.pkhLedger({
+    ledgerClient,
+    ledgerState,
+    network,
+    account: 0,
+    change: 0,
+    index: 0
+  });
+  const pkhDescriptor = new Descriptor({ expression: pkhExpression, network });
+
+  const ledgerKeyExpression = await descriptors.keyExpressionLedger({
+    ledgerClient,
+    ledgerState,
+    originPath: WSH_ORIGIN_PATH,
+    change: 0,
+    index: 0
+  });
+  const softKeyExpression = descriptors.keyExpressionBIP32({
+    masterNode,
+    originPath: WSH_ORIGIN_PATH,
+    change: 0,
+    index: 0
+  });
+  const { miniscript, issane } = compilePolicy(POLICY);
+  if (!issane) throw new Error(`Error: miniscript not sane`);
+  const wshExpression = `wsh(${miniscript
+    .replace('@ledger', ledgerKeyExpression)
+    .replace('@soft', softKeyExpression)})`;
+  const wshDescriptor = new Descriptor({ expression: wshExpression, network });
+
+  console.log(
+    `Fund ${pkhDescriptor.getAddress()} and ${wshDescriptor.getAddress()}`
+  );
+};
+
+if (typeof document !== 'undefined') {
+  document.body.innerHTML = `Connect your Ledger, open Bitcoin Test 2.1 App and:  
+<a href="#" id="start">Click to start</a>`;
+  document
+    .getElementById('start')!
+    .addEventListener('click', () => start(WebTransport));
+} else start(NodeTransport);
 
 /*
 
-const UTXO_VALUE = 2e4;
-const FEE = 1000;
-const BLOCKS = 5;
-const OLDER = olderEncode({ blocks: BLOCKS });
-const PREIMAGE =
-  '107661134f21fc7c02223d50ab9eb3600bc3ffc3712423a1e47bb1f9a9dbf55f';
-const SHA256_DIGEST =
-  '6c60f404f8167a38fc70eaf8aa17ac351023bef86bcb9d1086a19afe95bd5333';
-
-const POLICY = `and(and(and(pk(@ledger),pk(@soft)),older(${OLDER})),sha256(${SHA256_DIGEST}))`;
-
-const WSH_ORIGIN_PATH = `/69420'/1'/0'`; //Actually, this could be any random path. Note that the Ledger will show a warning for non-standardness, though.
-const WSH_RECEIVE_INDEX = 0;
-
-const SOFT_MNEMONIC =
-  'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
-
-import * as ecc from '@bitcoinerlab/secp256k1';
-import {
-  finalizePsbt,
-  signers,
-  keyExpressionBIP32,
-  keyExpressionLedger,
-  scriptExpressions,
-  DescriptorsFactory,
-  DescriptorInterface,
-  ledger,
-  LedgerState
-} from '@bitcoinerlab/descriptors';
-const { signLedger, signBIP32 } = signers;
-const { pkhLedger } = scriptExpressions;
-const { registerLedgerWallet, AppClient, assertLedgerApp } = ledger;
-const { Descriptor, BIP32 } = DescriptorsFactory(ecc);
-
-import { compilePolicy } from '@bitcoinerlab/miniscript';
 
 //Create the psbt that will spend the pkh and wsh outputs and send funds to FINAL_ADDRESS:
-const psbt = new Psbt({ network: NETWORK });
 
 //Build the miniscript-based descriptor.
 //POLICY will be: 'and(and(and(pk(@ledger),pk(@soft)),older(5)),sha256(6c60f404f8167a38fc70eaf8aa17ac351023bef86bcb9d1086a19afe95bd5333))'
@@ -192,7 +221,7 @@ const psbtInputDescriptors: DescriptorInterface[] = [];
   const miniscriptDescriptor = new Descriptor({
     expression,
     index: WSH_RECEIVE_INDEX,
-    preimages: [{ digest: `sha256(${SHA256_DIGEST})`, preimage: PREIMAGE }],
+    preimages: [{ digest: `sha256(${DIGEST})`, preimage: PREIMAGE }],
     network: NETWORK
   });
   //We can now fund the wsh utxo:

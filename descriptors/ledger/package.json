@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "main": "index.ts",
   "scripts": {
-    "descriptors/legacy2segwit": "clear && node --experimental-fetch ./descriptors/legacy2segwit",
+    "descriptors/ledger": "clear && node --experimental-fetch ./descriptors/ledger/index.js",
+    "descriptors/legacy2segwit": "clear && node --experimental-fetch ./descriptors/legacy2segwit/index.js",
     "build": "npx tsc",
     "lint": "eslint . --ext .js,.ts"
   },
@@ -12,6 +13,7 @@
   "dependencies": {
     "@bitcoinerlab/descriptors": "^0.2.1",
     "@bitcoinerlab/secp256k1": "^1.0.2",
+    "@ledgerhq/hw-transport-node-hid": "^6.27.12",
     "@ledgerhq/hw-transport-webhid": "^6.27.12",
     "bip39": "^3.0.4",
     "create-hash": "^1.2.0"
