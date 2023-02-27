@@ -10,6 +10,11 @@ const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 const network = networks.testnet;
 const EXPLORER = 'https://blockstream.info/testnet';
 const isWeb = typeof window !== 'undefined';
+const Log = (message: string) => {
+  const logsElement = isWeb && document.getElementById('logs');
+  if (logsElement) logsElement.innerHTML += `<p>${message}</p>`;
+  console.log(message.replace(/<[^>]*>?/gm, '')); //strip html tags
+};
 const ledgerStorage = isWeb && localStorage.getItem('ledger');
 //Ledger is stateless. We store state in localStorage. Deserialize it if found:
 const ledgerState = ledgerStorage
@@ -20,12 +25,6 @@ const ledgerState = ledgerStorage
     )
   : {};
 console.log({ ledgerState });
-const Log = (message: string) => {
-  const logsElement = isWeb && document.getElementById('logs');
-  if (logsElement)
-    logsElement.innerHTML = `<p>${message}</p>` + logsElement.innerHTML;
-  console.log(isWeb ? message : message.replace(/<[^>]*>?/gm, '')); //strip html
-};
 const BLOCKS = 5;
 const OLDER = olderEncode({ blocks: BLOCKS });
 const PREIMAGE =
