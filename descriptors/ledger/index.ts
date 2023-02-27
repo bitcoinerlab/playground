@@ -59,16 +59,12 @@ const start = async () => {
       Log(`Not detected. Connect and <a href="javascript:start();">retry</a>.`);
     }
   }
-  try {
-    //Throws if not running Bitcoin Test >= 2.1.0
-    await descriptors.ledger.assertLedgerApp({
-      transport,
-      name: 'Bitcoin Test',
-      minVersion: '2.1.0'
-    });
-  } catch (err) {
-    Log((err as any).toString());
-  }
+  //Throws if not running Bitcoin Test >= 2.1.0
+  await descriptors.ledger.assertLedgerApp({
+    transport,
+    name: 'Bitcoin Test',
+    minVersion: '2.1.0'
+  });
   const ledgerClient = new descriptors.ledger.AppClient(transport);
 
   const wpkhExpression = await descriptors.scriptExpressions.wpkhLedger({
