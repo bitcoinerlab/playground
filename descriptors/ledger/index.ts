@@ -19,6 +19,14 @@ const ledgerState = ledgerStorage
         : value
     )
   : {};
+if (isWeb) {
+  const originalLog = console.log;
+  console.log = (message: string) => {
+    if (document.getElementById('logs'))
+      document.getElementById('logs')!.innerHTML += message + '<br/>';
+    originalLog(message);
+  };
+}
 const BLOCKS = 5;
 const OLDER = olderEncode({ blocks: BLOCKS });
 const PREIMAGE =
@@ -176,6 +184,6 @@ https://bitcoinfaucet.uo1.net/`);
 
 if (isWeb) {
   document.body.innerHTML = `Connect a Ledger, open Bitcoin Test 2.1 App and:  
-<a href="#" id="start">Click to start</a>`;
+<a href="#" id="start">Click to start</a><div id="logs"/>`;
   document.getElementById('start')!.addEventListener('click', start);
 } else start();
