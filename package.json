@@ -2,9 +2,10 @@
   "name": "playground",
   "type": "module",
   "version": "0.1.0",
+  "main": "index.ts",
   "scripts": {
-    "descriptors/legacy2segwit": "clear && node --experimental-fetch ./descriptors/legacy2segwit.js",
-    "build": "npx tsc && npx prettier --write './**/*.js'",
+    "descriptors/legacy2segwit": "clear && node --experimental-fetch ./descriptors/legacy2segwit",
+    "build": "npx tsc",
     "lint": "eslint . --ext .js,.ts"
   },
   "author": "Jose-Luis Landabaso",

@@ -1,6 +1,8 @@
 .DS_Store
 *.swp
+**/*.d.ts
+**/*.js
 node_modules/
 docs/
 dist/
-**/*.js
+codesandbox/
