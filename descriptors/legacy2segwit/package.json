@@ -12,6 +12,7 @@
   "author": "Jose-Luis Landabaso",
   "dependencies": {
     "@bitcoinerlab/descriptors": "^0.2.1",
+    "@bitcoinerlab/miniscript": "^1.2.1",
     "@bitcoinerlab/secp256k1": "^1.0.2",
     "@ledgerhq/hw-transport-node-hid": "^6.27.12",
     "@ledgerhq/hw-transport-webhid": "^6.27.12",

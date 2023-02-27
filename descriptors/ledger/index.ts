@@ -52,7 +52,7 @@ const start = async () => {
     let Transport = await import(
       `@ledgerhq/hw-transport-${isWeb ? 'web' : 'node-'}hid`
     );
-    //This while is to make it work both with typescript & compiled javascript
+    //while loop hack to make it work both with typescript & compiled javascript
     while (Transport.default) Transport = Transport.default as any;
     try {
       transport = await Transport.create();
@@ -76,7 +76,7 @@ const start = async () => {
 <a href="javascript:start();">try again</a>.`);
     return;
   }
-  Log(`Ledger successfully connected.`);
+  Log(`Ledger successfully connected. Check your device.`);
   const ledgerClient = new descriptors.ledger.AppClient(transport);
 
   const wpkhDescriptor = new Descriptor({
