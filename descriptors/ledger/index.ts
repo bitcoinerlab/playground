@@ -58,20 +58,20 @@ const start = async () => {
       transport = null;
       return;
     }
-    try {
-      //Throws if not running Bitcoin Test >= 2.1.0
-      await descriptors.ledger.assertLedgerApp({
-        transport,
-        name: 'Bitcoin Test',
-        minVersion: '2.1.0'
-      });
-    } catch (err) {
-      Log(`Open the Bitcoin Test App, version >= 2.1.0 and \
-<a href="javascript:start();">try again</a>.`);
-      return;
-    }
-    Log(`Ledger successfully connected.`);
   }
+  try {
+    //Throws if not running Bitcoin Test >= 2.1.0
+    await descriptors.ledger.assertLedgerApp({
+      transport,
+      name: 'Bitcoin Test',
+      minVersion: '2.1.0'
+    });
+  } catch (err) {
+    Log(`Open the Bitcoin Test App, version >= 2.1.0 and \
+<a href="javascript:start();">try again</a>.`);
+    return;
+  }
+  Log(`Ledger successfully connected.`);
   const ledgerClient = new descriptors.ledger.AppClient(transport);
 
   const wpkhExpression = await descriptors.scriptExpressions.wpkhLedger({
