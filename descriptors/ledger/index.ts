@@ -12,7 +12,8 @@ import WebTransport from '@ledgerhq/hw-transport-webhid';
 const start = async () => {
   let transport;
   try {
-    transport = await WebTransport.create(3000, 3000);
+    transport = await WebTransport.create();
+    console.log(`Successfully connected`);
   } catch (err) {
     throw new Error(`Error: Ledger device not detected`);
   }
