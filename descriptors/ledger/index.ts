@@ -21,8 +21,9 @@ const ledgerState = ledgerStorage
   : {};
 console.log({ ledgerState });
 const Log = (message: string) => {
-  if (isWeb && document.getElementById('logs'))
-    document.getElementById('logs')!.innerHTML += `<p>${message}</p>`;
+  const logsElement = isWeb && document.getElementById('logs');
+  if (logsElement)
+    logsElement.innerHTML = `<p>${message}</p>` + logsElement.innerHTML;
   console.log(isWeb ? message : message.replace(/<[^>]*>?/gm, '')); //strip html
 };
 const BLOCKS = 5;
