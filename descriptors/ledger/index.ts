@@ -115,7 +115,7 @@ const start = async () => {
     await fetch(`${EXPLORER}/api/address/${wshAddress}/utxo`)
   ).json();
   if (wpkhUtxo?.[0] && wshUtxo?.[0]) {
-    Log(`Successfully funded!`);
+    Log(`Successfully funded. Now let's spend them. Go to your Ledger now!`);
     let txHex = await (
       await fetch(`${EXPLORER}/api/tx/${wpkhUtxo?.[0].txid}/hex`)
     ).text();
@@ -168,7 +168,12 @@ const start = async () => {
         body: spendTx.toHex()
       })
     ).text();
-    Log(`Pushed: ${spendTx.toHex()} with result: ${spendTxPushResult}`);
+    console.log({ pushedHex: spendTx.toHex() });
+    Log(`Tx pushed with result: ${spendTxPushResult}`);
+    if (spendTxPushResult.match('non-BIP68-final')) {
+      Log(`You still need to wait for a few blocks (up to 5) to push the tx.`);
+      Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
+    }
     //You may get non-bip68 final now. You need to wait 5 blocks
     Log(`See tx pushed: ${EXPLORER}/tx/${spendTx.getId()}`);
   } else {
