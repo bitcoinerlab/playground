@@ -1,1 +1,26 @@
-package.json
+{
+  "name": "playground",
+  "type": "module",
+  "version": "0.1.0",
+  "main": "index.ts",
+  "scripts": {
+    "descriptors/legacy2segwit": "clear && node --experimental-fetch ./descriptors/legacy2segwit",
+    "build": "npx tsc",
+    "lint": "eslint . --ext .js,.ts"
+  },
+  "author": "Jose-Luis Landabaso",
+  "dependencies": {
+    "@bitcoinerlab/descriptors": "^0.2.1",
+    "@bitcoinerlab/secp256k1": "^1.0.2",
+    "bip39": "^3.0.4",
+    "create-hmac": "^1.1.7"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^5.53.0",
+    "@typescript-eslint/parser": "^5.53.0",
+    "eslint-config-prettier": "^8.6.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "prettier": "^2.8.4",
+    "typescript": "^4.9.5"
+  }
+}
