@@ -53,7 +53,7 @@ const start = async () => {
     while (Transport.default) Transport = Transport.default as any;
     try {
       transport = await Transport.create();
-      Log(`Ledger successfully connected`);
+      Log(`Ledger successfully connected.`);
     } catch (err) {
       transport = null;
       throw new Error(`Error: Ledger device not detected`);
@@ -183,7 +183,7 @@ You need to register the Policy (only once) and then accept spending 2 utxos.`);
     Log(`Not yet! Use https://bitcoinfaucet.uo1.net to get some sats:`);
     Log(`${wpkhAddress}: ${wpkhUtxo?.[0] ? 'Funded!' : 'NOT funded'}`);
     Log(`${wshAddress}: ${wshUtxo?.[0] ? 'Funded!' : 'NOT funded'}`);
-    Log(`<a href="javascript:start();">Check again</a>`);
+    Log(`Fund them and <a href="javascript:start();">check again</a>.`);
   }
   //Save to localStorage
   if (isWeb) localStorage.setItem('ledger', JSON.stringify(ledgerState));
