@@ -107,7 +107,7 @@ const start = async () => {
   const wshAddress = wshDescriptor.getAddress();
 
   console.log(`Use https://bitcoinfaucet.uo1.net/ to fund your addresses: \
-<${wpkhAddress}> and <${wshAddress}>`);
+${wpkhAddress} and ${wshAddress}`);
 
   //Now spend it:
   const psbt = new Psbt({ network });
@@ -177,9 +177,9 @@ const start = async () => {
     //You may get non-bip68 final now. You need to wait 5 blocks
     console.log(`See tx pushed: ${EXPLORER}/tx/${spendTx.getId()}`);
   } else {
-    console.log(`Not funded or already spent: \
-${wpkhAddress}: ${wpkhUtxo?.[0] ? 'yes' : 'no'} / \
-${wshAddress}: ${wshUtxo?.[0] ? 'yes' : 'no'}`);
+    console.log(`Status: \
+${wpkhAddress}: ${wpkhUtxo?.[0] ? 'Funded' : 'Not yet funded'} / \
+${wshAddress}: ${wshUtxo?.[0] ? 'Funded' : 'Not yet funded'}`);
   }
   //Save to localStorage
   if (isWeb) localStorage.setItem('ledger', JSON.stringify(ledgerState));
