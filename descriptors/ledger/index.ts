@@ -67,6 +67,10 @@ const start = async () => {
       minVersion: '2.1.0'
     });
   } catch (err) {
+    if (transport) {
+      await transport.close();
+      transport = null;
+    }
     Log(`Open the Bitcoin Test App, version >= 2.1.0 and \
 <a href="javascript:start();">try again</a>.`);
     return;
