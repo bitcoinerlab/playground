@@ -106,13 +106,10 @@ const start = async () => {
   });
   const wshAddress = wshDescriptor.getAddress();
 
-  console.log(`Use https://bitcoinfaucet.uo1.net/ to fund your addresses: \
-${wpkhAddress} and ${wshAddress}`);
-
   //Now spend it:
   const psbt = new Psbt({ network });
   const psbtInputDescriptors: descriptors.DescriptorInterface[] = [];
-  console.log(`Checking if already funded...`);
+  console.log(`First fund your utxos. Checking if already funded...`);
   const wpkhUtxo = await (
     await fetch(`${EXPLORER}/api/address/${wpkhAddress}/utxo`)
   ).json();
@@ -177,6 +174,7 @@ ${wpkhAddress} and ${wshAddress}`);
     //You may get non-bip68 final now. You need to wait 5 blocks
     console.log(`See tx pushed: ${EXPLORER}/tx/${spendTx.getId()}`);
   } else {
+    console.log(`Not yet. Use https://bitcoinfaucet.uo1.net/ to get some sats`);
     console.log(`Status: \
 ${wpkhAddress}: ${wpkhUtxo?.[0] ? 'Funded' : 'Not yet funded'} / \
 ${wshAddress}: ${wshUtxo?.[0] ? 'Funded' : 'Not yet funded'}`);
