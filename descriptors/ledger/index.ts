@@ -68,7 +68,6 @@ const start = async () => {
     } catch (err) {
       Log(`Open the Bitcoin Test App, version >= 2.1.0 and \
 <a href="javascript:start();">try again</a>.`);
-      transport = null;
       return;
     }
     Log(`Ledger successfully connected.`);
