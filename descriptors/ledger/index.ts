@@ -22,10 +22,9 @@ const Log = (message: string) => {
 //Ledger is stateless. We store state in localStorage. Deserialize it if found:
 const ledgerStorage = isWeb && localStorage.getItem('ledger');
 const ledgerState = ledgerStorage
-  ? JSON.parse(ledgerStorage, (_key, value) =>
-      value instanceof Object && value.type === 'Buffer'
-        ? new Buffer(value.data)
-        : value
+  ? JSON.parse(ledgerStorage, (_key, val) =>
+      //JSON.parse does not know how to deal with Buffers. Let's show it:
+      val instanceof Object && val.type == 'Buffer' ? new Buffer(val.data) : val
     )
   : {};
 console.log('ledgerState:', { ...ledgerState });
@@ -40,7 +39,7 @@ const POLICY = `\
 and(and(and(pk(@ledger),pk(@soft)),older(${OLDER})),sha256(${DIGEST}))`;
 
 const WSH_ORIGIN_PATH = `/69420'/1'/0'`; //This can be any path you like.
-const WSH_KEY_PATH = `/0/0`; //Same as above.
+const WSH_KEY_PATH = `/0/0`; //Choose any path.
 
 const SOFT_MNEMONIC = `abandon abandon abandon abandon abandon abandon abandon \
 abandon abandon abandon abandon about`;
@@ -52,7 +51,7 @@ const start = async () => {
     let Transport = await import(
       `@ledgerhq/hw-transport-${isWeb ? 'web' : 'node-'}hid`
     );
-    //while loop hack to make it work both with typescript & compiled javascript
+    //while-loop hack to make it work both for Typescript & compiled Javascript
     while (Transport.default) Transport = Transport.default as any;
     try {
       transport = await Transport.create();
@@ -76,9 +75,10 @@ const start = async () => {
 <a href="javascript:start();">try again</a>.`);
     return;
   }
-  Log(`Ledger successfully connected. Check your device.`);
+  Log(`Ledger ready.`);
   const ledgerClient = new descriptors.ledger.AppClient(transport);
 
+  //Let's prepare the wpkh utxo:
   const wpkhDescriptor = new Descriptor({
     expression: await descriptors.scriptExpressions.wpkhLedger({
       ledgerClient,
@@ -116,9 +116,9 @@ const start = async () => {
   });
   const wshAddress = wshDescriptor.getAddress();
 
-  //Now spend it:
+  //Now, spend both wpkh and wsh utxos:
   const psbt = new Psbt({ network });
-  const psbtInputDescriptors: descriptors.DescriptorInterface[] = [];
+  const psbtInputDescriptors = [];
   Log(`Fund the utxos. Let's first check if they're already funded...`);
   const wpkhUtxo = await (
     await fetch(`${EXPLORER}/api/address/${wpkhAddress}/utxo`)
@@ -138,7 +138,7 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
     txHex = await (
       await fetch(`${EXPLORER}/api/tx/${wshUtxo?.[0].txid}/hex`)
     ).text();
-    inputValue += wpkhUtxo[0].value;
+    inputValue += wshUtxo[0].value;
     i = wshDescriptor.updatePsbt({ psbt, txHex, vout: wshUtxo[0].vout });
     psbtInputDescriptors[i] = wshDescriptor;
     //We'll send the funds to one of our Ledger's internal (change) addresses:
@@ -163,6 +163,7 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
       descriptor: wshDescriptor,
       policyName: 'BitcoinerLab'
     });
+    //We can sign the tx with the Ledger.
     await descriptors.signers.signLedger({
       ledgerClient,
       ledgerState,
@@ -171,8 +172,7 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
     });
     //Now sign the PSBT with the BIP32 node (the software wallet)
     descriptors.signers.signBIP32({ psbt, masterNode });
-
-    //Finalize the tx and submit it to the blockchain
+    //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
     descriptors.finalizePsbt({ psbt, descriptors: psbtInputDescriptors });
     const spendTx = psbt.extractTransaction();
     const spendTxPushResult = await (
@@ -183,8 +183,8 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
     ).text();
     console.log({ pushedHex: spendTx.toHex() });
     Log(`Tx pushed with result: ${spendTxPushResult}`);
+    //You may get non-bip68 final now. You need to wait 5 blocks.
     if (spendTxPushResult.match('non-BIP68-final')) {
-      //You may get non-bip68 final now. You need to wait 5 blocks
       Log(`You still need to wait for a few more blocks (up to ${BLOCKS}).`);
       Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
     } else {
@@ -197,7 +197,7 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
     Log(`${wshAddress}: ${wshUtxo?.[0] ? 'Funded!' : 'NOT funded'}`);
     Log(`Fund them and <a href="javascript:start();">check again</a>.`);
   }
-  //Save to localStorage
+  //Save ledgerState to localStorage
   if (isWeb) localStorage.setItem('ledger', JSON.stringify(ledgerState));
 };
 if (isWeb) (window as any).start = start;
