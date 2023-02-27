@@ -53,18 +53,24 @@ const start = async () => {
     while (Transport.default) Transport = Transport.default as any;
     try {
       transport = await Transport.create();
+    } catch (err) {
+      Log(`Not detected. Connect and <a href="javascript:start();">retry</a>.`);
+      transport = null;
+      return;
+    }
+    try {
       //Throws if not running Bitcoin Test >= 2.1.0
       await descriptors.ledger.assertLedgerApp({
         transport,
         name: 'Bitcoin Test',
         minVersion: '2.1.0'
       });
-      Log(`Ledger successfully connected.`);
     } catch (err) {
+      Log((err as any).toString());
       transport = null;
-      Log(`Not detected. Connect and <a href="javascript:start();">retry</a>.`);
+      return;
     }
-    return;
+    Log(`Ledger successfully connected.`);
   }
   const ledgerClient = new descriptors.ledger.AppClient(transport);
 
