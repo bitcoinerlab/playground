@@ -19,14 +19,12 @@ const ledgerState = ledgerStorage
         : value
     )
   : {};
-if (isWeb) {
-  const originalLog = console.log;
-  console.log = (message: string) => {
-    if (document.getElementById('logs'))
-      document.getElementById('logs')!.innerHTML += `<p>${message}</p>`;
-    originalLog(message);
-  };
-}
+console.log({ ledgerState });
+const Log = (message: string) => {
+  if (isWeb && document.getElementById('logs'))
+    document.getElementById('logs')!.innerHTML += `<p>${message}</p>`;
+  console.log(message);
+};
 const BLOCKS = 5;
 const OLDER = olderEncode({ blocks: BLOCKS });
 const PREIMAGE =
@@ -55,7 +53,7 @@ const start = async () => {
     while (Transport.default) Transport = Transport.default as any;
     try {
       transport = await Transport.create();
-      console.log(`Ledger successfully connected`);
+      Log(`Ledger successfully connected`);
     } catch (err) {
       transport = null;
       throw new Error(`Error: Ledger device not detected`);
@@ -109,7 +107,7 @@ const start = async () => {
   //Now spend it:
   const psbt = new Psbt({ network });
   const psbtInputDescriptors: descriptors.DescriptorInterface[] = [];
-  console.log(`First fund your utxos. Checking if already funded...`);
+  Log(`Fund the utxos. Let's first check if they're already funded...`);
   const wpkhUtxo = await (
     await fetch(`${EXPLORER}/api/address/${wpkhAddress}/utxo`)
   ).json();
@@ -117,7 +115,7 @@ const start = async () => {
     await fetch(`${EXPLORER}/api/address/${wshAddress}/utxo`)
   ).json();
   if (wpkhUtxo?.[0] && wshUtxo?.[0]) {
-    console.log(`Successfully funded!`);
+    Log(`Successfully funded!`);
     let txHex = await (
       await fetch(`${EXPLORER}/api/tx/${wpkhUtxo?.[0].txid}/hex`)
     ).text();
@@ -170,14 +168,14 @@ const start = async () => {
         body: spendTx.toHex()
       })
     ).text();
-    console.log(`Pushed: ${spendTx.toHex()} with result: ${spendTxPushResult}`);
+    Log(`Pushed: ${spendTx.toHex()} with result: ${spendTxPushResult}`);
     //You may get non-bip68 final now. You need to wait 5 blocks
-    console.log(`See tx pushed: ${EXPLORER}/tx/${spendTx.getId()}`);
+    Log(`See tx pushed: ${EXPLORER}/tx/${spendTx.getId()}`);
   } else {
-    console.log(`Not yet. Use https://bitcoinfaucet.uo1.net/ to get some sats`);
-    console.log(`Status: \
-${wpkhAddress}: ${wpkhUtxo?.[0] ? 'Funded' : 'Not yet funded'} / \
-${wshAddress}: ${wshUtxo?.[0] ? 'Funded' : 'Not yet funded'}`);
+    Log(`Not yet! Use https://bitcoinfaucet.uo1.net to get some sats:`);
+    Log(`${wpkhAddress}: ${wpkhUtxo?.[0] ? 'Funded!' : 'NOT funded'}`);
+    Log(`${wshAddress}: ${wshUtxo?.[0] ? 'Funded!' : 'NOT funded'}`);
+    Log(`<a href="javascript:start();">Check again</a>`);
   }
   //Save to localStorage
   if (isWeb) localStorage.setItem('ledger', JSON.stringify(ledgerState));
