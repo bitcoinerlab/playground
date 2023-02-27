@@ -1,25 +1,25 @@
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
-import fetch from 'node-fetch';
-const { pkhBIP32, wpkhBIP32 } = descriptors.scriptExpressions;
-const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 import { mnemonicToSeedSync } from 'bip39';
 import { Psbt, networks } from 'bitcoinjs-lib';
+const { pkhBIP32, wpkhBIP32 } = descriptors.scriptExpressions;
+const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 const network = networks.testnet;
 const FEE = 500;
 
 //Let's create our software wallet with this mnemonic:
 const MNEMONIC =
-  'drum turtle globe inherit autumn flavor slice illness sniff distance carbon elder';
+  'drum turtle globe inherit autumn flavor ' +
+  'slice illness sniff distance carbon elder';
 const masterNode = BIP32.fromSeed(mnemonicToSeedSync(MNEMONIC), network);
 
-//Let's get the Legacy address where we know we have some initial money to play with:
+//Let's get the Legacy address where we know we have some initial money to play:
 const descriptorLegacy = new Descriptor({
   expression: pkhBIP32({ masterNode, network, account: 0, keyPath: '/0/1' }),
   network
 });
 //See, we start with 1679037 sats in moovc1JqGrz4v6FA2U8ks8ZqjSwjv3yRKQ:
-//https://blockstream.info/testnet/tx/ee02b5a12c2f22e892bed376781fc9ed435f0d192a1b67ca47a7190804d8e868
+//https://tinyurl.com/mu82nmzw
 const TXID = 'ee02b5a12c2f22e892bed376781fc9ed435f0d192a1b67ca47a7190804d8e868';
 console.log(`We start with:`, { address: descriptorLegacy.getAddress(), TXID });
 

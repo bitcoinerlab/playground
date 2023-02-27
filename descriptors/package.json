@@ -1,0 +1,4 @@
+{
+  "main": "./legacy2segwit.ts",
+  "extends": "../package.json"
+}
