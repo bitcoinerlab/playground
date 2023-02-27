@@ -24,7 +24,7 @@ const ledgerState = ledgerStorage
         : value
     )
   : {};
-console.log({ ledgerState });
+console.log('ledgerState:', { ...ledgerState });
 const BLOCKS = 5;
 const OLDER = olderEncode({ blocks: BLOCKS });
 const PREIMAGE =
@@ -49,22 +49,26 @@ const start = async () => {
     let Transport = await import(
       `@ledgerhq/hw-transport-${isWeb ? 'web' : 'node-'}hid`
     );
-    //So that this works both with typescript and compiled javascript:
+    //This while is to make it work both with typescript & compiled javascript
     while (Transport.default) Transport = Transport.default as any;
     try {
       transport = await Transport.create();
       Log(`Ledger successfully connected.`);
     } catch (err) {
       transport = null;
-      throw new Error(`Error: Ledger device not detected`);
+      Log(`Not detected. Connect and <a href="javascript:start();">retry</a>.`);
     }
   }
-  //Throw if not running Bitcoin Test >= 2.1.0
-  await descriptors.ledger.assertLedgerApp({
-    transport,
-    name: 'Bitcoin Test',
-    minVersion: '2.1.0'
-  });
+  try {
+    //Throws if not running Bitcoin Test >= 2.1.0
+    await descriptors.ledger.assertLedgerApp({
+      transport,
+      name: 'Bitcoin Test',
+      minVersion: '2.1.0'
+    });
+  } catch (err) {
+    Log((err as any).toString());
+  }
   const ledgerClient = new descriptors.ledger.AppClient(transport);
 
   const wpkhExpression = await descriptors.scriptExpressions.wpkhLedger({
@@ -192,6 +196,6 @@ if (isWeb) (window as any).start = start;
 
 if (isWeb) {
   document.body.innerHTML = `<div id="logs">Connect a Ledger, open Bitcoin Test\
- 2.1 App and: <a href="#" id="start">Click to start</a></div>`;
+ 2.1 App and: <a href="#" id="start">Click to start</a>.</div>`;
   document.getElementById('start')!.addEventListener('click', start);
 } else start();
