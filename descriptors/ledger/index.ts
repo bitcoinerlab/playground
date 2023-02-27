@@ -37,15 +37,21 @@ const SOFT_MNEMONIC =
   'abandon abandon abandon abandon abandon about';
 const masterNode = BIP32.fromSeed(mnemonicToSeedSync(SOFT_MNEMONIC), network);
 
+let transport: any = null;
 const start = async () => {
-  let Tr = await import(`@ledgerhq/hw-transport-${isWeb ? 'web' : 'node-'}hid`);
-  while (Tr.default) Tr = Tr.default as any;
-  let transport;
-  try {
-    transport = await Tr.create();
-    console.log(`Ledger successfully connected`);
-  } catch (err) {
-    throw new Error(`Error: Ledger device not detected`);
+  if (!transport) {
+    let Transport = await import(
+      `@ledgerhq/hw-transport-${isWeb ? 'web' : 'node-'}hid`
+    );
+    //So that this works both with typescript and compiled javascript:
+    while (Transport.default) Transport = Transport.default as any;
+    try {
+      transport = await Transport.create();
+      console.log(`Ledger successfully connected`);
+    } catch (err) {
+      transport = null;
+      throw new Error(`Error: Ledger device not detected`);
+    }
   }
   //Throw if not running Bitcoin Test >= 2.1.0
   await descriptors.ledger.assertLedgerApp({
