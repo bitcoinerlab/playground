@@ -12,7 +12,10 @@ const EXPLORER = 'https://blockstream.info/testnet';
 const isWeb = typeof window !== 'undefined';
 const Log = (message: string) => {
   const logsElement = isWeb && document.getElementById('logs');
-  if (logsElement) logsElement.innerHTML += `<p>${message}</p>`;
+  if (logsElement) {
+    logsElement.innerHTML += `<p>${message}</p>`;
+    logsElement.scrollTop = logsElement.scrollHeight;
+  }
   console.log(message.replace(/<[^>]*>?/gm, '')); //strip html tags
 };
 
