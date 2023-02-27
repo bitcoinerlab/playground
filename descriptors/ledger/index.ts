@@ -23,7 +23,7 @@ console.log({ ledgerState });
 const Log = (message: string) => {
   if (isWeb && document.getElementById('logs'))
     document.getElementById('logs')!.innerHTML += `<p>${message}</p>`;
-  console.log(message);
+  console.log(isWeb ? message : message.replace(/<[^>]*>?/gm, '')); //strip html
 };
 const BLOCKS = 5;
 const OLDER = olderEncode({ blocks: BLOCKS });
@@ -115,7 +115,7 @@ const start = async () => {
     await fetch(`${EXPLORER}/api/address/${wshAddress}/utxo`)
   ).json();
   if (wpkhUtxo?.[0] && wshUtxo?.[0]) {
-    Log(`Successfully funded. Now let's spend them. Go to your Ledger now!<br/>\
+    Log(`Successfully funded. Now let's spend them. Go to your Ledger now! \
 You need to register the Policy (only once) and then accept spending 2 utxos.`);
     let txHex = await (
       await fetch(`${EXPLORER}/api/tx/${wpkhUtxo?.[0].txid}/hex`)
@@ -172,7 +172,7 @@ You need to register the Policy (only once) and then accept spending 2 utxos.`);
     console.log({ pushedHex: spendTx.toHex() });
     Log(`Tx pushed with result: ${spendTxPushResult}`);
     if (spendTxPushResult.match('non-BIP68-final')) {
-      Log(`You still need to wait for a few blocks (up to 5) to push the tx.`);
+      Log(`You still need to wait for a few more blocks (up to ${BLOCKS}).`);
       Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
     } else {
       //You may get non-bip68 final now. You need to wait 5 blocks
