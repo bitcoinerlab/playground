@@ -61,12 +61,9 @@ console.log(`We start with:`, { address: descriptorLegacy.getAddress(), TXID });
   const spendTx = psbt.extractTransaction();
   //When you try this, it won't be accepted (again), indeed.
   const spendTxPushResult = await (
-    await fetch('https://blockstream.info/testnet/api/tx', {
-      method: 'POST',
-      body: spendTx.toHex()
-    })
+    await fetch(`${EXPLORER}/api/tx`, { method: 'POST', body: spendTx.toHex() })
   ).text();
 
-  console.log({ body: spendTx.toHex(), spendTxPushResult });
+  console.log({ tx: spendTx.toHex(), spendTxPushResult });
   console.log(`Tx pushed:`, { url: `${EXPLORER}/tx/${spendTx.getId()}` });
 })();
