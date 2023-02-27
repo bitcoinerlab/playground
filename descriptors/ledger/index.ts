@@ -115,7 +115,8 @@ const start = async () => {
     await fetch(`${EXPLORER}/api/address/${wshAddress}/utxo`)
   ).json();
   if (wpkhUtxo?.[0] && wshUtxo?.[0]) {
-    Log(`Successfully funded. Now let's spend them. Go to your Ledger now!`);
+    Log(`Successfully funded. Now let's spend them. Go to your Ledger now!<br/>\
+You need to register the Policy (only once) and then accept spending 2 utxos.`);
     let txHex = await (
       await fetch(`${EXPLORER}/api/tx/${wpkhUtxo?.[0].txid}/hex`)
     ).text();
