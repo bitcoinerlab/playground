@@ -192,7 +192,7 @@ You need to register the Policy (only once) and then accept spending 2 utxos.`);
 if (isWeb) (window as any).start = start;
 
 if (isWeb) {
-  document.body.innerHTML = `Connect a Ledger, open Bitcoin Test 2.1 App and:  
-<a href="#" id="start">Click to start</a><div id="logs"/>`;
+  document.body.innerHTML = `<div id="logs">Connect a Ledger, open Bitcoin Test\
+ 2.1 App and: <a href="#" id="start">Click to start</a></div>`;
   document.getElementById('start')!.addEventListener('click', start);
 } else start();
