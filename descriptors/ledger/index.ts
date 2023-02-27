@@ -13,7 +13,7 @@ const start = async () => {
   let transport;
   try {
     transport = await WebTransport.create();
-    console.log(`Successfully connected`);
+    console.log(`Ledger Successfully connected`);
   } catch (err) {
     throw new Error(`Error: Ledger device not detected`);
   }
@@ -24,7 +24,9 @@ const start = async () => {
     minVersion: '2.1.0'
   });
 };
-document.body.innerHTML = '<div id="start">click to start</div>';
+document.body.innerHTML =
+  '<div style="display: inline-block; padding: 10px 20px; background-color: #007bff; color: #fff; border: none; border-radius: 4px; cursor: pointer;" id="start">Connect your Ledger, open Bitcoin Test 2.1 App & click to start</div>';
+
 document.getElementById('start')!.addEventListener('click', start);
 
 /*
