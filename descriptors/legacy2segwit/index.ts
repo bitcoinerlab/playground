@@ -1,3 +1,6 @@
+// Copyright (c) 2023 Jose-Luis Landabaso - https://bitcoinerlab.com
+// Distributed under the MIT software license
+
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
 import { mnemonicToSeedSync } from 'bip39';
@@ -14,7 +17,7 @@ const MNEMONIC =
   'slice illness sniff distance carbon elder';
 const masterNode = BIP32.fromSeed(mnemonicToSeedSync(MNEMONIC), network);
 
-//We started with 1679037 sats in mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q
+//We started with 1679037 sats in moovc1JqGrz4v6FA2U8ks8ZqjSwjv3yRKQ
 //You can verify it in a block explorer: https://tinyurl.com/mu82nmzw
 const TXID = 'ee02b5a12c2f22e892bed376781fc9ed435f0d192a1b67ca47a7190804d8e868';
 
