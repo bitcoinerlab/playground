@@ -19,7 +19,8 @@
     "@ledgerhq/hw-transport-webhid": "^6.27.12",
     "bip39": "^3.0.4",
     "bip65": "^1.0.3",
-    "create-hash": "^1.2.0"
+    "create-hash": "^1.2.0",
+    "fs": "^0.0.1-security"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.53.0",
