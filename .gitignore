@@ -2,6 +2,8 @@
 *.swp
 **/*.d.ts
 **/*.js
+.emergencyWIF
+.unvaultMnemonic
 node_modules/
 docs/
 dist/
