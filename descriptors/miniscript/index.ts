@@ -147,9 +147,8 @@ const start = async () => {
       Log(`Success. <a href="${EXPLORER}/tx/${txId}?expand">Check it!</a>`);
     }
   } else {
-    Log(`Not yet! Use https://bitcoinfaucet.uo1.net to get some sats:`);
-    Log(`${wshAddress}: ${utxo?.[0] ? 'Funded!' : 'NOT funded'}`);
-    Log(`Fund them and <a href="javascript:start();">check again</a>.`);
+    Log(`Not yet! Use https://bitcoinfaucet.uo1.net to send some sats to:`);
+    Log(`${wshAddress} Fund it & <a href="javascript:start()">check again</a>`);
   }
 };
 if (isWeb) (window as any).start = start;
