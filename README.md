@@ -4,19 +4,17 @@ This repository contains a set of Playgrounds that serve as the foundation for t
 
 You can either run the code on a sandboxed playground or locally by installing it.
 
-**Note**: The code shown in these guides is in TypeScript, but a transpiled JavaScript version is automatically generated when building the sources if you prefer to use JavaScript.
+**Note**: The code shown in these guides is in TypeScript, but a transpiled JavaScript version is automatically generated when building the sources.
 
 ## Running the Code on a Playground
 
 To run the code in a playground, [visit the respective guide](https://bitcoinerlab.com/guides) and click the **SHOW PLAYGROUND** button.
 
-Guides provide thorough explanations of how the code works.
-
+All the guides provide thorough explanations of how the code works.
 
 ## Running Locally
 
 If you prefer to run the code locally, clone and run the [BitcoinerLab Playground repository](https://github.com/bitcoinerlab/playground) in your local machine.
-
 
 For example:
 
