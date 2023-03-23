@@ -140,7 +140,7 @@ const start = async () => {
       spendTxPushResult.match('non-BIP68-final') ||
       spendTxPushResult.match('non-final')
     ) {
-      Log(`This means it's TimeLocked. You need to wait a few more blocks.`);
+      Log(`This means it's still TimeLocked and miners rejected the tx.`);
       Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
     } else {
       const txId = spendTx.getId();
