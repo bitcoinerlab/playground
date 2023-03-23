@@ -76,7 +76,7 @@ const start = async () => {
     await (await fetch(`${EXPLORER}/api/blocks/tip/height`)).text()
   );
   const after = afterEncode({ blocks: currentBlockHeight + BLOCKS });
-  Log(`Policy: ${JSONf({ currentBlockHeight, policy: POLICY(after) })}`);
+  Log(`Current block height: ${currentBlockHeight}`);
   //Now let's prepare the wsh utxo:
   const { miniscript, issane } = compilePolicy(POLICY(after));
   if (!issane) throw new Error(`Error: miniscript not sane`);
@@ -140,7 +140,7 @@ const start = async () => {
       spendTxPushResult.match('non-BIP68-final') ||
       spendTxPushResult.match('non-final')
     ) {
-      Log(`Not final. You will need to wait up to ${BLOCKS} blocks.`);
+      Log(`This means it's TimeLocked. You need to wait a few more blocks.`);
       Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
     } else {
       const txId = spendTx.getId();
