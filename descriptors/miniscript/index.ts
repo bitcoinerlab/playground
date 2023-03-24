@@ -28,12 +28,12 @@ const Log = (message: string) => {
 //JSON to pretty-string format:
 const JSONf = (json: object) => JSON.stringify(json, null, '\t');
 
-const EMERGENCY_RECOVERY = false;
+const EMERGENCY_RECOVERY = false; //Set it to true to use the "Panic Button"
 const BLOCKS = 5;
 const POLICY = (after: number) =>
   `or(pk(@emergencyKey),and(pk(@unvaultKey),after(${after})))`;
 const WSH_ORIGIN_PATH = `/69420'/1'/0'`; //This can be any path you like.
-const WSH_KEY_PATH = `/0/0`; //Choose any path.
+const WSH_KEY_PATH = `/0/0`; //Choose any path you like.
 
 Log(`This test data: ${JSONf({ EMERGENCY_RECOVERY, BLOCKS })}`);
 
@@ -99,7 +99,6 @@ const start = async () => {
     signersPubKeys: [EMERGENCY_RECOVERY ? emergencyPair.publicKey : unvaultKey]
   });
   const wshAddress = wshDescriptor.getAddress();
-  const psbt = new Psbt({ network });
   Log(`Fund your vault. Let's first check if it's been already funded...`);
   const utxo = await (
     await fetch(`${EXPLORER}/api/address/${wshAddress}/utxo`)
@@ -110,6 +109,7 @@ const start = async () => {
       await fetch(`${EXPLORER}/api/tx/${utxo?.[0].txid}/hex`)
     ).text();
     const inputValue = utxo[0].value;
+    const psbt = new Psbt({ network });
     wshDescriptor.updatePsbt({ psbt, txHex, vout: utxo[0].vout });
     //Send funds to any address: "abandon^11 about" mnemonic 1st/2nd pkh address
     //Be nice. Give the miners 1000 sats :)
