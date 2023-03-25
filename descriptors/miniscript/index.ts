@@ -111,12 +111,13 @@ const start = async () => {
     const inputValue = utxo[0].value;
     const psbt = new Psbt({ network });
     wshDescriptor.updatePsbt({ psbt, txHex, vout: utxo[0].vout });
-    //Send funds to any address: "abandon^11 about" mnemonic 1st/2nd pkh address
-    //Be nice. Give the miners 1000 sats :)
+    //For the purpose of this guide, we add an output to send funds to hardcoded
+    //addresses, which we don't care about, just to show how to use the API. Don't
+    //forget to account for transaction fees!
     psbt.addOutput({
       address: EMERGENCY_RECOVERY
         ? 'mkpZhYtJu2r87Js3pDiWJDmPte2NRZ8bJV'
-        : 'mzpbWabUQm1w8ijuJnAof5eiSTep27deVH',
+        : 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge',
       value: inputValue - 1000
     });
 
