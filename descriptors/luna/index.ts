@@ -4,8 +4,6 @@
 //This is a solution to Lunaticoin challenge:
 //https://twitter.com/lunaticoin/status/1642141720119853063
 
-const FEE = 1000; //This should be enough
-const MY_ADDRESS = '3FYsjXPy81f96odShrKQoAiLFVmt6Tjf4g'; //Put here your address
 //This is the previous tx:
 //https://blockstream.info/tx/1c4e43be5b6e503c7aba1a83ade6ae5a7408a5aeaf504ce7519caf681aa9398e?expand
 //https://blockstream.info/api/tx/1c4e43be5b6e503c7aba1a83ade6ae5a7408a5aeaf504ce7519caf681aa9398e/hex
@@ -16,6 +14,8 @@ import { networks, Psbt } from 'bitcoinjs-lib';
 import { mnemonicToSeedSync } from 'bip39';
 const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 
+const FEE = 1000; //This should be enough
+const MY_ADDRESS = '3FYsjXPy81f96odShrKQoAiLFVmt6Tjf4g'; //Put here your address
 const network = networks.bitcoin;
 const MNEMONIC =
   'winter task shrimp toast gas regular fan bundle dismiss crash violin inner';
