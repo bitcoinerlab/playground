@@ -108,6 +108,11 @@ window.start = () => {
   }
 
   Log(`The key expressions: ${JSONf(keyExpressions)}`);
+  const isolatedMiniscript = miniscript.replace(
+    /(\w+)/g,
+    (match, key) => keyExpressions[key] || match
+  );
+  Log(`The descriptor: wsh(${isolatedMiniscript})`);
   console.log({
     compilePolicy,
     Psbt,
