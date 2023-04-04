@@ -36,6 +36,11 @@ const Log = (message: string) => {
   logsElement!.innerHTML += `<p>${message}</p>`;
   logsElement!.lastElementChild?.scrollIntoView();
 };
+declare global {
+  interface Window {
+    start: () => void;
+  }
+}
 document.body.innerHTML = `<div id="logs">
 <a href="javascript:start();" id="start">Click to start!</a></div>`;
 
@@ -60,32 +65,33 @@ const KEY_PATH = '/0';
 const EXPLORER = `https://blockstream.info/${
   network === networks.testnet ? 'testnet' : ''
 }`;
+window.start = () => {
+  const storedMnemonics = localStorage.getItem('mnemonics');
+  const mnemonics: { [key: string]: string } = storedMnemonics
+    ? JSON.parse(storedMnemonics)
+    : {
+        //Add keys. Use generateMnemonic to create random mnemonics or assign one:
+        '@MINE': generateMnemonic(),
+        '@CUSTODIAL': 'oil oil oil oil oil oil oil oil oil oil oil oil',
+        '@FALLBACK': generateMnemonic()
+      };
 
-Log(`This test data: ${JSONf({ EMERGENCY_RECOVERY, BLOCKS })}`);
-
-const storedMnemonics = localStorage.getItem('mnemonics');
-const mnemonics: { [key: string]: string } = storedMnemonics
-  ? JSON.parse(storedMnemonics)
-  : {
-      //Add keys. Use generateMnemonic to create random mnemonics or assign one:
-      '@MINE': generateMnemonic(),
-      '@CUSTODIAL': 'oil oil oil oil oil oil oil oil oil oil oil oil',
-      '@FALLBACK': generateMnemonic()
-    };
-
-console.log({
-  compilePolicy,
-  Psbt,
-  olderEncode,
-  Descriptor,
-  ORIGIN_PATH,
-  KEY_PATH,
-  EXPLORER,
-  POLICY,
-  mnemonicToSeedSync,
-  BIP32
-});
-Log(`Your mnemonics 🤫: ${JSONf({ mnemonics })}`);
+  console.log({
+    compilePolicy,
+    Psbt,
+    olderEncode,
+    Descriptor,
+    ORIGIN_PATH,
+    KEY_PATH,
+    EXPLORER,
+    POLICY,
+    mnemonicToSeedSync,
+    BIP32,
+    EMERGENCY_RECOVERY,
+    BLOCKS
+  });
+  Log(`Your mnemonics 🤫: ${JSONf({ mnemonics })}`);
+};
 
 //const start = async () => {
 //  const currentBlockHeight = parseInt(
