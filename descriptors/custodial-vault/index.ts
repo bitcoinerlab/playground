@@ -92,13 +92,16 @@ window.start = () => {
   const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
   Log(`The compiled miniscript: ${miniscript}`);
 
-  const keyExpressions = mnemonics.map((mnemonic: string) =>
-    descriptors.keyExpressionBIP32({
+  const keyExpressions: { [key: string]: string } = {};
+  for (const key in mnemonics) {
+    const mnemonic = mnemonics[key];
+    keyExpressions[key] = descriptors.keyExpressionBIP32({
       masterNode: BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network),
       originPath: ORIGIN_PATH,
       keyPath: KEY_PATH
-    })
-  );
+    });
+  }
+
   Log(`The key expressions: ${JSONf(keyExpressions)}`);
   console.log({
     compilePolicy,
@@ -109,7 +112,6 @@ window.start = () => {
     EXPLORER,
     POLICY,
     mnemonicToSeedSync,
-    BIP32,
     BLOCKS
   });
 };
