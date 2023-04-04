@@ -29,7 +29,7 @@ const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 
 //JSON to pretty-string format:
 const JSONf = (json: object) =>
-  `<pre style="white-space:pre-wrap;">${JSON.stringify(
+  `<pre style="white-space:pre-wrap;overflow-wrap:break-word;">${JSON.stringify(
     json,
     null,
     '  '
@@ -38,9 +38,10 @@ const JSONf = (json: object) =>
 //Shows results on the browser:
 const Log = (message: string) => {
   const logsElement = document.getElementById('logs');
-  logsElement!.innerHTML += `<p>${message}</p>`;
+  logsElement!.innerHTML += `<p style="overflow-wrap:break-word;">${message}</p>`;
   logsElement!.lastElementChild?.scrollIntoView();
 };
+let run = 0;
 declare global {
   interface Window {
     start: () => void;
@@ -77,6 +78,8 @@ const EXPLORER = `https://blockstream.info/${
   network === networks.testnet ? 'testnet' : ''
 }`;
 window.start = () => {
+  Log(`=== RUN ${run} ===`);
+  run++;
   //Try to retrieve the mnemonics from the browsers storage. If not there, then
   //create some random mnemonics (or assign any mnemonic we choose)
   const storedMnemonics = localStorage.getItem('mnemonics');
@@ -108,11 +111,13 @@ window.start = () => {
   }
 
   Log(`The key expressions: ${JSONf(keyExpressions)}`);
+  //Let's replace the pub key @VARIABLES with their respective key expressions:
   const isolatedMiniscript = miniscript.replace(
-    /(\w+)/g,
+    /@(\w+)/g,
     (match, key) => keyExpressions[key] || match
   );
-  Log(`The descriptor: wsh(${isolatedMiniscript})`);
+  const descriptorExpression = `wsh(${isolatedMiniscript})`;
+  Log(`The descriptor: ${descriptorExpression}`);
   console.log({
     compilePolicy,
     Psbt,
