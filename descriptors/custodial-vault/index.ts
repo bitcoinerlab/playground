@@ -28,7 +28,7 @@ import { encode as olderEncode } from 'bip68';
 const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 
 //JSON to pretty-string format:
-const JSONf = (j: object) => `<pre>${JSON.stringify(j, null, '\t')}</pre>`;
+const JSONf = (j: object) => `<code>${JSON.stringify(j, null, '\t')}</code>`;
 
 //Shows results on the browser:
 const Log = (message: string) => {
@@ -46,9 +46,9 @@ window.reset = () => {
   localStorage.clear();
   window.start();
 };
-document.body.innerHTML = `<div id="logs"/><div>
-<p><a href="javascript:reset();">Click to reset the keys!</a></p>
-<p><a href="javascript:start();">Click to restart!</a></p>
+document.body.innerHTML = `<div id="logs"></div><div>
+<p><a href="javascript:start();">Start</a>&nbsp;&nbsp;&nbsp;&nbsp;
+<a href="javascript:reset();">Reset mnemonics</a></p>
 </div>`;
 
 // =============================================================================
@@ -87,8 +87,10 @@ window.start = () => {
   //Store them now in the browsers storage:
   localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
 
+  Log(`Your mnemonics 🤫: ${JSONf(mnemonics)}`);
+  Log(`The policy: ${POLICY(olderEncode({ blocks: BLOCKS }))}`);
   const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
-  Log(`This is the compiled policy: ${miniscript}`);
+  Log(`This is the compiled policy->miniscript: ${miniscript}`);
   console.log({
     compilePolicy,
     Psbt,
@@ -101,7 +103,6 @@ window.start = () => {
     BIP32,
     BLOCKS
   });
-  Log(`Your mnemonics 🤫: ${JSONf(mnemonics)}`);
 };
 
 //const start = async () => {
