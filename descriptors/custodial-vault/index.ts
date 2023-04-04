@@ -60,7 +60,8 @@ document.body.innerHTML = `<div id="logs"></div><div>
 // =============================================================================
 // The program starts here
 // =============================================================================
-
+//Set it to true if not using the Custodial (after expiry):
+const FALLBACK_RECOVERY = false;
 const network = networks.testnet; //change it to "networks.bitcoin", for mainnet
 const POLICY = (time: number) =>
   `or(and(pk(@MINE),pk(@CUSTODIAL)),and(older(${time}),pk(@FALLBACK)))`;
@@ -101,13 +102,18 @@ window.start = () => {
   Log(`The compiled miniscript: ${miniscript}`);
 
   const keyExpressions: { [key: string]: string } = {};
+  const pubKeys: { [key: string]: Buffer } = {};
   for (const key in mnemonics) {
     const mnemonic = mnemonics[key];
+    const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
     keyExpressions[key] = descriptors.keyExpressionBIP32({
-      masterNode: BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network),
+      masterNode,
       originPath: ORIGIN_PATH,
       keyPath: KEY_PATH
     });
+    pubKeys[key] = masterNode.derivePath(
+      `m${ORIGIN_PATH}${KEY_PATH}`
+    ).publicKey;
   }
 
   Log(`The key expressions: ${JSONf(keyExpressions)}`);
@@ -118,6 +124,17 @@ window.start = () => {
   );
   const descriptorExpression = `wsh(${isolatedMiniscript})`;
   Log(`The descriptor: ${descriptorExpression}`);
+  let signersPubKeys;
+  if (FALLBACK_RECOVERY) signersPubKeys = [pubKeys['@FALLBACK']];
+  else signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@MINE']];
+  const vaultDescriptor = new Descriptor({
+    expression: descriptorExpression,
+    network,
+    signersPubKeys: signersPubKeys as Buffer[]
+  });
+  const vaultAddress = vaultDescriptor.getAddress();
+  Log(`The vault address: ${vaultAddress}`);
+
   console.log({
     compilePolicy,
     Psbt,
