@@ -39,11 +39,16 @@ const Log = (message: string) => {
 declare global {
   interface Window {
     start: () => void;
+    reset: () => void;
   }
 }
-document.body.innerHTML = `<div id="logs">
-<p><a href="javascript:start();" id="start">Click to start!</a></p>
-<p><a href="javascript:reset();" id="start">Click to reset!</a></p>
+window.reset = () => {
+  localStorage.clear();
+  window.start();
+};
+document.body.innerHTML = `<div id="logs"/><div>
+<p><a href="javascript:reset();">Click to reset the keys!</a></p>
+<p><a href="javascript:start();">Click to restart!</a></p>
 </div>`;
 
 // =============================================================================
@@ -51,7 +56,6 @@ document.body.innerHTML = `<div id="logs">
 // =============================================================================
 
 const network = networks.testnet; //change it to "networks.bitcoin", for mainnet
-const EMERGENCY_RECOVERY = false; //Set it to true to use the "Panic Button"
 const POLICY = (time: number) =>
   `or(and(pk(@MINE),pk(@CUSTODIAL)),and(older(${time}),pk(@FALLBACK)))`;
 const BLOCKS = 5;
@@ -67,25 +71,27 @@ const KEY_PATH = '/0';
 const EXPLORER = `https://blockstream.info/${
   network === networks.testnet ? 'testnet' : ''
 }`;
-window.reset = () => {
-  localStorage.clear();
-};
 window.start = () => {
+  //Try to retrieve the mnemonics from the browsers storage. If not there, then
+  //create some random mnemonics (or assign any mnemonic we choose)
   const storedMnemonics = localStorage.getItem('mnemonics');
-  const mnemonics: { [key: string]: string } = storedMnemonics
+  const mnemonics = storedMnemonics
     ? JSON.parse(storedMnemonics)
     : {
-        //Add keys. Use generateMnemonic to create random mnemonics or assign one:
+        //Here is where you would set the mnemonics.
+        //Use generateMnemonic to create random ones or directly assign one:
         '@MINE': generateMnemonic(),
         '@CUSTODIAL': 'oil oil oil oil oil oil oil oil oil oil oil oil',
         '@FALLBACK': generateMnemonic()
       };
+  //Store them now in the browsers storage:
   localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
 
+  const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
+  Log(`This is the compiled policy: ${miniscript}`);
   console.log({
     compilePolicy,
     Psbt,
-    olderEncode,
     Descriptor,
     ORIGIN_PATH,
     KEY_PATH,
@@ -93,7 +99,6 @@ window.start = () => {
     POLICY,
     mnemonicToSeedSync,
     BIP32,
-    EMERGENCY_RECOVERY,
     BLOCKS
   });
   Log(`Your mnemonics 🤫: ${JSONf(mnemonics)}`);
@@ -180,5 +185,3 @@ window.start = () => {
 //    Log(`${wshAddress} Fund it & <a href="javascript:start()">check again</a>`);
 //  }
 //};
-document.body.innerHTML = `<div id="logs">
-<a href="javascript:start();" id="start">Click to start!</a></div>`;
