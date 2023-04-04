@@ -36,6 +36,8 @@ const Log = (message: string) => {
   logsElement!.innerHTML += `<p>${message}</p>`;
   logsElement!.lastElementChild?.scrollIntoView();
 };
+document.body.innerHTML = `<div id="logs">
+<a href="javascript:start();" id="start">Click to start!</a></div>`;
 
 // =============================================================================
 // The program starts here
@@ -46,13 +48,13 @@ const EMERGENCY_RECOVERY = false; //Set it to true to use the "Panic Button"
 const POLICY = (time: number) =>
   `or(and(pk(@MINE),pk(@CUSTODIAL)),and(older(${time}),pk(@FALLBACK)))`;
 const BLOCKS = 5;
-//Origin can be any path you like. F.ex, use /48'/0'/0'/2' for mu-sig in maninnet,
-//1st account, native segwit, would have been (Read BIP48 for the details).
-//For this "custodial-vault" example we choose any non-standard origin:
+//Origin can be any path you like. F.ex, use /48'/0'/0'/2' for musig, maninnet,
+//1st account & native segwit (read BIP48 for the details).
+//For this "custodial-vault" example we choose any non-standard origin. F.ex.:
 const ORIGIN_PATH = "/69420'";
-//Given, the origin, now we must choose the speciffic path of the key.
+//Now we must choose the speciffic path of the key within the origin.
 //F.ex, the first internal address in mu-sig would have been: /0/0
-//For the sake of keeping this simple, we will use one address per seed:
+//For the sake of keeping this simple, we will assume only one address per seed:
 const KEY_PATH = '/0';
 
 const EXPLORER = `https://blockstream.info/${
