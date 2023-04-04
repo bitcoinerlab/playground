@@ -28,7 +28,12 @@ import { encode as olderEncode } from 'bip68';
 const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 
 //JSON to pretty-string format:
-const JSONf = (j: object) => `<pre>${JSON.stringify(j, null, '\t')}</pre>`;
+const JSONf = (json: object) =>
+  `<pre style="white-space:pre-wrap;">${JSON.stringify(
+    json,
+    null,
+    '  '
+  )}</pre>`;
 
 //Shows results on the browser:
 const Log = (message: string) => {
