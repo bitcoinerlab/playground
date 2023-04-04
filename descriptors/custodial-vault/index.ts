@@ -28,7 +28,7 @@ import { encode as olderEncode } from 'bip68';
 const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 
 //JSON to pretty-string format:
-const JSONf = (j: object) => `<code>${JSON.stringify(j, null, '\t')}</code>`;
+const JSONf = (j: object) => `<pre>${JSON.stringify(j, null, '\t')}</pre>`;
 
 //Shows results on the browser:
 const Log = (message: string) => {
@@ -47,7 +47,7 @@ window.reset = () => {
   window.start();
 };
 document.body.innerHTML = `<div id="logs"></div><div>
-<p><a href="javascript:start();">Start</a>&nbsp;&nbsp;&nbsp;&nbsp;
+<p><a href="javascript:start();">Run</a>&nbsp;&nbsp;&nbsp;&nbsp;
 <a href="javascript:reset();">Reset mnemonics</a></p>
 </div>`;
 
@@ -87,10 +87,19 @@ window.start = () => {
   //Store them now in the browsers storage:
   localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
 
-  Log(`Your mnemonics 🤫: ${JSONf(mnemonics)}`);
+  Log(`The mnemonics 🤫: ${JSONf(mnemonics)}`);
   Log(`The policy: ${POLICY(olderEncode({ blocks: BLOCKS }))}`);
   const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
-  Log(`This is the compiled policy->miniscript: ${miniscript}`);
+  Log(`The compiled miniscript: ${miniscript}`);
+
+  const keyExpressions = mnemonics.map((mnemonic: string) =>
+    descriptors.keyExpressionBIP32({
+      masterNode: BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network),
+      originPath: ORIGIN_PATH,
+      keyPath: KEY_PATH
+    })
+  );
+  Log(`The key expressions: ${JSONf(keyExpressions)}`);
   console.log({
     compilePolicy,
     Psbt,
