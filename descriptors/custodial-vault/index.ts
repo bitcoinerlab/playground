@@ -28,7 +28,7 @@ import { encode as olderEncode } from 'bip68';
 const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 
 //JSON to pretty-string format:
-const JSONf = (json: object) => JSON.stringify(json, null, '\t');
+const JSONf = (j: object) => `<pre>${JSON.stringify(j, null, '\t')}</pre>`;
 
 //Shows results on the browser:
 const Log = (message: string) => {
@@ -42,7 +42,9 @@ declare global {
   }
 }
 document.body.innerHTML = `<div id="logs">
-<a href="javascript:start();" id="start">Click to start!</a></div>`;
+<p><a href="javascript:start();" id="start">Click to start!</a></p>
+<p><a href="javascript:reset();" id="start">Click to reset!</a></p>
+</div>`;
 
 // =============================================================================
 // The program starts here
@@ -65,6 +67,9 @@ const KEY_PATH = '/0';
 const EXPLORER = `https://blockstream.info/${
   network === networks.testnet ? 'testnet' : ''
 }`;
+window.reset = () => {
+  localStorage.clear();
+};
 window.start = () => {
   const storedMnemonics = localStorage.getItem('mnemonics');
   const mnemonics: { [key: string]: string } = storedMnemonics
@@ -75,6 +80,7 @@ window.start = () => {
         '@CUSTODIAL': 'oil oil oil oil oil oil oil oil oil oil oil oil',
         '@FALLBACK': generateMnemonic()
       };
+  localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
 
   console.log({
     compilePolicy,
@@ -90,7 +96,7 @@ window.start = () => {
     EMERGENCY_RECOVERY,
     BLOCKS
   });
-  Log(`Your mnemonics 🤫: ${JSONf({ mnemonics })}`);
+  Log(`Your mnemonics 🤫: ${JSONf(mnemonics)}`);
 };
 
 //const start = async () => {
