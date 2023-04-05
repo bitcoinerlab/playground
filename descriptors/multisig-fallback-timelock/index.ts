@@ -123,10 +123,10 @@ const mnemonics = storedMnemonics
 //Store them now in the browsers storage:
 localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
 
-Log(`Read the description of this playground in the header of the code editor on
-  the left. To change the settings, locate the SETTINGS section in the editor
+Log(`Read the description of this playground in the header of the editor on
+  the left.<br/>To change the settings, locate the SETTINGS section in the editor
   and modify the values as needed. The code will automatically recompile after
-  editing. Click "Run" at the bottom when ready.`);
+  editing.<br/>Click "Run" at the bottom to start.`);
 Log(`Policy: <code>${POLICY(olderEncode({ blocks: BLOCKS }))}</code>`);
 Log(`Mnemonics 🤫: ${JSONf(mnemonics)}`);
 const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
