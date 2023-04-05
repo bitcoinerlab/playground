@@ -77,7 +77,7 @@ document.body.innerHTML = `<div style="font-size:0.95em;" id="logs"></div><div>
 // =============================================================================
 // SETTINGS (edit to your convenience):
 // =============================================================================
-// Set FALLBACK_RECOVERY to true to simulate a scenario where the cosigner is
+// Set FALLBACK_RECOVERY to true to simulate a scenario where the COSIGNER is
 // uncooperative, out of service or out of business:
 const FALLBACK_RECOVERY = false;
 const isTestnet = true; //Change it to false, for mainnet. AT YOUR OWN RISK!!!
@@ -163,8 +163,8 @@ if (FALLBACK_RECOVERY) {
       ${behaviourMsg} Wait for the timelock to expire to access the funds.`);
   signersPubKeys = [pubKeys['@FALLBACK']];
 } else {
-  Log(`The code is currently set to use <b>normal cooperation between user and
-      cosigner</b>. ${behaviourMsg}`);
+  Log(`The code is currently set to use <b>normal cooperation between USER and
+      COSIGNER</b>. ${behaviourMsg}`);
   signersPubKeys = [pubKeys['@COSIGNER'], pubKeys['@USER']];
 }
 const descriptor = new Descriptor({
@@ -201,11 +201,11 @@ window.start = async () => {
       Log(`Signing with the FALLBACK key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@FALLBACK']! });
     } else {
-      Log(`A PSBT is now created and sent to the cosigner:`);
+      Log(`A PSBT is now created and sent to the COSIGNER:`);
       Log(psbt.toBase64());
       Log(`The COSIGNER receives and signs the PSBT...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@COSIGNER']! });
-      Log(`Now, the cosigner sends back the signed PSBT to the user to be
+      Log(`Now, the COSIGNER sends back the signed PSBT to the USER to be
           finalized and pushed to the network.`);
       Log(`The USER signs the PSBT with their key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@USER']! });
