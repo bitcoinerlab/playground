@@ -64,7 +64,7 @@ window.reset = () => {
   localStorage.clear();
   window.location.reload();
 };
-document.body.innerHTML = `<div id="logs"></div><div>
+document.body.innerHTML = `<div style="font-size:0.95em;" id="logs"></div><div>
 <p><a href="javascript:start();">Run</a>&nbsp;&nbsp;&nbsp;&nbsp;
 <a href="javascript:reset();">Reset mnemonics</a></p>
 </div>`;
