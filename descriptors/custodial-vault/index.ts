@@ -40,9 +40,9 @@ const JSONf = (json: object) =>
 
 //Shows results on the browser:
 const Log = (message: string) => {
-  const logsElement = document.getElementById('logs');
-  logsElement!.innerHTML += `<p style="overflow-wrap:break-word;">${message}</p>`;
-  logsElement!.lastElementChild?.scrollIntoView();
+  const logsEl = document.getElementById('logs');
+  logsEl!.innerHTML += `<p style="overflow-wrap:break-word;">${message}</p>`;
+  logsEl!.lastElementChild?.scrollIntoView();
 };
 let run = 0;
 declare global {
@@ -90,8 +90,8 @@ const storedMnemonics = localStorage.getItem('mnemonics');
 const mnemonics = storedMnemonics
   ? JSON.parse(storedMnemonics)
   : {
-      //Here is where you would set the mnemonics.
-      //Use generateMnemonic to create random ones or assign one with quotes:
+      //Here is where you would set the mnemonics with quotes or
+      //using generateMnemonic() to create random ones:
       '@USER': generateMnemonic(),
       '@CUSTODIAL': 'oil oil oil oil oil oil oil oil oil oil oil oil',
       '@FALLBACK': generateMnemonic()
@@ -130,7 +130,8 @@ Log(`Descriptor: ${descriptorExpression}`);
 let signersPubKeys;
 if (FALLBACK_RECOVERY) {
   Log(
-    `This test assumes the FALLBACK_RECOVERY mechanism. You'll need to wait for the timelock to expire to access the funds.`
+    `This test assumes the FALLBACK_RECOVERY mechanism.
+     You'll need to wait for the timelock to expire to access the funds.`
   );
   signersPubKeys = [pubKeys['@FALLBACK']];
 } else {
@@ -138,7 +139,8 @@ if (FALLBACK_RECOVERY) {
   signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@USER']];
 }
 Log(
-  `You can change this behaviour by settting variable FALLBACK_RECOVERY = true / false.`
+  `You can change this behaviour by settting variable
+  FALLBACK_RECOVERY = true / false.`
 );
 const vaultDescriptor = new Descriptor({
   expression: descriptorExpression,
@@ -159,7 +161,7 @@ window.start = async () => {
     await fetch(`${EXPLORER}/api/address/${vaultAddress}/utxo`)
   ).json();
   if (utxo?.[0]) {
-    Log(`Yes! Successfully funded. Now let's spend the funds.`);
+    Log(`Yes! Successfully funded. Now, let's move the funds.`);
     const txHex = await (
       await fetch(`${EXPLORER}/api/tx/${utxo?.[0].txid}/hex`)
     ).text();
@@ -167,8 +169,8 @@ window.start = async () => {
     const psbt = new Psbt({ network });
     vaultDescriptor.updatePsbt({ psbt, txHex, vout: utxo[0].vout });
     //For the purpose of this guide, we add an output to send funds to hardcoded
-    //addresses, which we don't care about, just to show how to use the API. Don't
-    //forget to account for transaction fees!
+    //addresses, which we don't care about, just to show how to use the API.
+    //Don't forget to account for transaction fees!
     psbt.addOutput({ address: FINAL_ADDRESS, value: inputValue - FEE });
     if (FALLBACK_RECOVERY) {
       Log(`Signing with the FALLBACK key...`);
@@ -176,13 +178,10 @@ window.start = async () => {
     } else {
       Log(`Signing with the USER key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@USER']! });
-      Log(
-        `Now, this PSBT (partially signed by the USER) would be sent to the 3rd party:`
-      );
+      Log(`Now, the PSBT (signed by the USER) would be sent to the custodial:`);
       Log(psbt.toBase64());
-      Log(
-        `Now, the 3rd party would give the signed PSBT back to the user to be finalized and pushed to the network.`
-      );
+      Log(`Now, the custodial would give the signed PSBT back to the user to be
+          finalized and pushed to the network.`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@CUSTODIAL']! });
     }
     //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
@@ -201,20 +200,20 @@ window.start = async () => {
     } else {
       const txId = spendTx.getId();
       Log(
-        `Pushed it! <a target=_blank href="${EXPLORER}/tx/${txId}?expand">Check progress here.</a>`
+        `Pushed it! <a target=_blank href="${EXPLORER}/tx/${txId}?expand">
+        Check progress here.</a>`
       );
     }
   } else {
     if (isTestnet)
       Log(
-        `Not yet! You can use <a href="${FAUCET}" target=_blank>${FAUCET}</a> to fund ${vaultAddress}.`
+        `Not yet! You can use <a href="${FAUCET}" target=_blank>${FAUCET}</a> to
+        fund ${vaultAddress}.`
       );
     else Log(`Not yet! You still need to send some sats to ${vaultAddress}.`);
-    Log(
-      `Note: If you already sent funds, you may need to wait until a miner processes it.`
-    );
-    Log(
-      `Fund it, wait a bit so that it is processed and <a href="javascript:start()">try again</a>.`
-    );
+    Log(`Note: If you already sent funds, you may need to wait until a miner
+        processes it.`);
+    Log(`Fund it, wait a bit so that it is processed and
+      <a href="javascript:start()">try again</a>.`);
   }
 };
