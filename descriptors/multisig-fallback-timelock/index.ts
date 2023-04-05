@@ -6,7 +6,7 @@
  *
  * Differently to the other playgrounds, this one has been designed exclussively
  * to be run on a browser-like environment to be run on:
- * https://bitcoinerlab.com/guides/custodial-vault
+ * https://bitcoinerlab.com/guides/multisig-fallback-timelock
  *
  * In order to simplify this example, only the first utxo of the first address
  * of each account is considered.
@@ -63,27 +63,28 @@ document.body.innerHTML = `<div id="logs"></div><div>
 // =============================================================================
 // The program starts here
 // =============================================================================
-//Set it to true if not using the Custodial (after expiry):
+//Set FALLBACK_RECOVERY to true if not using Custodial+User cooperation:
 const FALLBACK_RECOVERY = false;
-const network = networks.testnet; //change it to "networks.bitcoin", for mainnet
+const isTestnet = true; //Change it to false, for mainnet
 const POLICY = (time: number) =>
   `or(10@and(pk(@USER),pk(@CUSTODIAL)),and(older(${time}),pk(@FALLBACK)))`;
-const BLOCKS = 2; //20 minutes...
+const BLOCKS = 2; //Number of blocks for the older() expression: ~20 minutes.
 //Origin can be any path you like. F.ex, use /48'/0'/0'/2' for musig, maninnet,
 //1st account & native segwit (read BIP48 for the details).
-//For this "custodial-vault" example we choose any non-standard origin. F.ex.:
+//For this "multisig-fallback-timelock" example we chose a random non-standard origin:
 const ORIGIN_PATH = "/69420'";
 //Now we must choose the speciffic path of the key within the origin.
 //F.ex, the first internal address in mu-sig would have been: /0/0
 //For the sake of keeping this simple, we will assume only one address per seed:
 const KEY_PATH = '/0';
-const isTestnet = network === networks.testnet;
-//This is the address that will get the funds after unvaulting or fallback
+//This is the address that will get the funds after spending or fallback
 const FINAL_ADDRESS = isTestnet
-  ? 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge'
-  : '3FYsjXPy81f96odShrKQoAiLFVmt6Tjf4g';
+  ? 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge' //Testnet address
+  : '3FYsjXPy81f96odShrKQoAiLFVmt6Tjf4g'; //Mainnet address
 const FEE = 300; //The vsize of this tx will be ~147 vbytes. Pay ~2 sats/vbyte
+
 const EXPLORER = `https://blockstream.info/${isTestnet ? 'testnet' : ''}`;
+const network = isTestnet ? networks.testnet : networks.bitcoin;
 //Try to retrieve the mnemonics from the browsers storage. If not there, then
 //create some random mnemonics (or assign any mnemonic we choose)
 const storedMnemonics = localStorage.getItem('mnemonics');
@@ -135,20 +136,20 @@ if (FALLBACK_RECOVERY) {
   );
   signersPubKeys = [pubKeys['@FALLBACK']];
 } else {
-  Log(`In this test assumes normal @USER+@CUSTODIAL co-operation.`);
+  Log(`This test assumes normal @USER & @CUSTODIAL cooperation.`);
   signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@USER']];
 }
 Log(
   `You can change this behaviour by settting variable
   FALLBACK_RECOVERY = true / false.`
 );
-const vaultDescriptor = new Descriptor({
+const descriptor = new Descriptor({
   expression: descriptorExpression,
   network,
   signersPubKeys: signersPubKeys as Buffer[]
 });
-const vaultAddress = vaultDescriptor.getAddress();
-Log(`Vault address: ${vaultAddress}`);
+const walletAddress = descriptor.getAddress();
+Log(`Wallet address: ${walletAddress}`);
 window.start = async () => {
   Log(`========== RUN ${run} @ ${new Date().toLocaleTimeString()} ==========`);
   const currentBlockHeight = parseInt(
@@ -158,7 +159,7 @@ window.start = async () => {
   run++;
   Log(`Let's check if the Wallet has funds...`);
   const utxo = await (
-    await fetch(`${EXPLORER}/api/address/${vaultAddress}/utxo`)
+    await fetch(`${EXPLORER}/api/address/${walletAddress}/utxo`)
   ).json();
   if (utxo?.[0]) {
     Log(`Yes! Successfully funded. Now, let's move the funds.`);
@@ -167,7 +168,7 @@ window.start = async () => {
     ).text();
     const inputValue = utxo[0].value;
     const psbt = new Psbt({ network });
-    vaultDescriptor.updatePsbt({ psbt, txHex, vout: utxo[0].vout });
+    descriptor.updatePsbt({ psbt, txHex, vout: utxo[0].vout });
     //For the purpose of this guide, we add an output to send funds to hardcoded
     //addresses, which we don't care about, just to show how to use the API.
     //Don't forget to account for transaction fees!
@@ -185,7 +186,7 @@ window.start = async () => {
       signers.signBIP32({ psbt, masterNode: masterNodes['@CUSTODIAL']! });
     }
     //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
-    vaultDescriptor.finalizePsbtInput({ index: 0, psbt });
+    descriptor.finalizePsbtInput({ index: 0, psbt });
     const spendTx = psbt.extractTransaction();
     Log(`Pushing the tx...`);
     const spendTxPushResult = await (
@@ -200,7 +201,7 @@ window.start = async () => {
     } else {
       const txId = spendTx.getId();
       Log(
-        `Successfully pushed! <a target=_blank href="${EXPLORER}/tx/${txId}?expand">
+        `Successfully pushed! <a target=_blank href="${EXPLORER}/tx/${txId}">
         Check progress here.</a>`
       );
     }
@@ -208,9 +209,9 @@ window.start = async () => {
     if (isTestnet)
       Log(
         `Not yet! You can use <a href="${FAUCET}" target=_blank>${FAUCET}</a> to
-        fund ${vaultAddress}.`
+        fund ${walletAddress}.`
       );
-    else Log(`Not yet! You still need to send some sats to ${vaultAddress}.`);
+    else Log(`Not yet! You still need to send some sats to ${walletAddress}.`);
     Log(`Note: If you already sent funds, you may need to wait until a miner
         processes it.`);
     Log(`Fund it, wait a bit so that it is mined and

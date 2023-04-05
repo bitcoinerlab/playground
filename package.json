@@ -7,7 +7,6 @@
     "descriptors/legacy2segwit": "clear && node --experimental-fetch ./descriptors/legacy2segwit/index.js",
     "descriptors/miniscript": "clear && node --experimental-fetch ./descriptors/miniscript/index.js",
     "descriptors/ledger": "clear && node --experimental-fetch ./descriptors/ledger/index.js",
-    "descriptors/custodial-vault": "clear && node --experimental-fetch ./descriptors/custodial-vault/index.js",
     "descriptors/luna": "clear && node --experimental-fetch ./descriptors/luna/index.js",
     "build": "npx tsc",
     "lint": "eslint . --ext .js,.ts"
