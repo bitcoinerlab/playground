@@ -13,7 +13,7 @@
  * become a bad actor.
  *
  * To simplify this example, only the first unspent transaction output (UTXO) of
- * the first address of the Wallet is considered. Looping over all  addresses
+ * the first address of the wallet is considered. Looping over all  addresses
  * and UTXOs is left as an exercise for the user.
  * Additionally, we won't differentiate between internal or external addresses.
  *
@@ -87,7 +87,7 @@ const ORIGIN_PATH = "/69420'";
 //F.ex, the first external address in multisig would have been: /0/0
 //For the sake of keeping this simple, we will assume only one external address:
 const KEY_PATH = '/0';
-//Set the address that will get the funds when spending from the Wallet:
+//Set the address that will get the funds when spending from the wallet:
 const FINAL_ADDRESS = isTestnet
   ? 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge' //Testnet address
   : '3FYsjXPy81f96odShrKQoAiLFVmt6Tjf4g'; //Mainnet address
@@ -176,12 +176,12 @@ window.start = async () => {
   );
   Log(`Current block height: ${currentBlockHeight}`);
   run++;
-  Log(`Let's check if the Wallet has funds...`);
+  Log(`Let's check if the wallet has funds...`);
   const utxo = await (
     await fetch(`${EXPLORER}/api/address/${walletAddress}/utxo`)
   ).json();
   if (utxo?.[0]) {
-    Log(`Yes, it's funded! Now, let's try to spend the funds from the Wallet.`);
+    Log(`Yes, it's funded! Now, let's try to spend the funds from the wallet.`);
     const txHex = await (
       await fetch(`${EXPLORER}/api/tx/${utxo?.[0].txid}/hex`)
     ).text();
@@ -196,18 +196,19 @@ window.start = async () => {
       Log(`Signing with the FALLBACK key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@FALLBACK']! });
     } else {
+      Log(`Now, assume a PSBT is sent to the cosigner so that it is signed:`);
+      Log(psbt.toBase64());
+      Log(`Signing with the COSIGNER key...`);
+      signers.signBIP32({ psbt, masterNode: masterNodes['@COSIGNER']! });
+      Log(`Now, the cosigner would send back the signed PSBT to the user to be
+          finalized and pushed to the network.`);
       Log(`Signing with the USER key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@USER']! });
-      Log(`Now, the PSBT (signed by the USER) would be sent to the cosigner:`);
-      Log(psbt.toBase64());
-      Log(`Now, the cosigner party would give the signed PSBT back to the user
-          to be finalized and pushed to the network.`);
-      signers.signBIP32({ psbt, masterNode: masterNodes['@COSIGNER']! });
     }
     //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
+    Log(`Finalizing the tx (adding the witness) & pushing the transaction...`);
     descriptor.finalizePsbtInput({ index: 0, psbt });
     const spendTx = psbt.extractTransaction();
-    Log(`Pushing the tx...`);
     const spendTxPushResult = await (
       await fetch(`${EXPLORER}/api/tx`, {
         method: 'POST',
@@ -233,7 +234,7 @@ window.start = async () => {
     else Log(`Not yet! You still need to send some sats to ${walletAddress}.`);
     Log(`Note: If you already sent funds, you may need to wait until a miner
         processes it.`);
-    Log(`Fund it, wait a bit so that it is mined and
+    Log(`Fund the wallet, wait a bit so that it is mined and
       <a href="javascript:start()">try again</a>.`);
   }
 };
