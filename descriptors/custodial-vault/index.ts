@@ -26,6 +26,7 @@ import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
 import { encode as olderEncode } from 'bip68';
 
 const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
+const FAUCET = 'https://bitcoinfaucet.uo1.net';
 
 //JSON to pretty-string format:
 const JSONf = (json: object) =>
@@ -64,7 +65,7 @@ document.body.innerHTML = `<div id="logs"></div><div>
 const FALLBACK_RECOVERY = false;
 const network = networks.testnet; //change it to "networks.bitcoin", for mainnet
 const POLICY = (time: number) =>
-  `or(and(pk(@MINE),pk(@CUSTODIAL)),and(older(${time}),pk(@FALLBACK)))`;
+  `or(and(pk(@USER),pk(@CUSTODIAL)),and(older(${time}),pk(@FALLBACK)))`;
 const BLOCKS = 5;
 //Origin can be any path you like. F.ex, use /48'/0'/0'/2' for musig, maninnet,
 //1st account & native segwit (read BIP48 for the details).
@@ -78,7 +79,7 @@ const KEY_PATH = '/0';
 const EXPLORER = `https://blockstream.info/${
   network === networks.testnet ? 'testnet' : ''
 }`;
-window.start = () => {
+window.start = async () => {
   Log(`=== RUN ${run} ===`);
   run++;
   //Try to retrieve the mnemonics from the browsers storage. If not there, then
@@ -88,16 +89,16 @@ window.start = () => {
     ? JSON.parse(storedMnemonics)
     : {
         //Here is where you would set the mnemonics.
-        //Use generateMnemonic to create random ones or directly assign one:
-        '@MINE': generateMnemonic(),
+        //Use generateMnemonic to create random ones or assign one with quotes:
+        '@USER': generateMnemonic(),
         '@CUSTODIAL': 'oil oil oil oil oil oil oil oil oil oil oil oil',
         '@FALLBACK': generateMnemonic()
       };
   //Store them now in the browsers storage:
   localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
 
-  Log(`The mnemonics 🤫: ${JSONf(mnemonics)}`);
   Log(`The policy: ${POLICY(olderEncode({ blocks: BLOCKS }))}`);
+  Log(`The mnemonics 🤫: ${JSONf(mnemonics)}`);
   const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
   Log(`The compiled miniscript: ${miniscript}`);
 
@@ -119,14 +120,14 @@ window.start = () => {
   Log(`The key expressions: ${JSONf(keyExpressions)}`);
   //Let's replace the pub key @VARIABLES with their respective key expressions:
   const isolatedMiniscript = miniscript.replace(
-    /@(\w+)/g,
+    /(@\w+)/g,
     (match, key) => keyExpressions[key] || match
   );
   const descriptorExpression = `wsh(${isolatedMiniscript})`;
   Log(`The descriptor: ${descriptorExpression}`);
   let signersPubKeys;
   if (FALLBACK_RECOVERY) signersPubKeys = [pubKeys['@FALLBACK']];
-  else signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@MINE']];
+  else signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@USER']];
   const vaultDescriptor = new Descriptor({
     expression: descriptorExpression,
     network,
@@ -134,6 +135,23 @@ window.start = () => {
   });
   const vaultAddress = vaultDescriptor.getAddress();
   Log(`The vault address: ${vaultAddress}`);
+  Log(`Let's check if it has some funds...`);
+  const utxo = await (
+    await fetch(`${EXPLORER}/api/address/${vaultAddress}/utxo`)
+  ).json();
+  if (utxo?.[0]) {
+    Log(`Yes! Successfully funded. Now let's spend the funds.`);
+  } else {
+    if (network === networks.testnet)
+      Log(
+        `Not yet! You can use <a href="${FAUCET}" target=_blank>${FAUCET}</a> to fund it.`
+      );
+    else Log(`Not yet! You still need to send there some sats.`);
+    Log(
+      `Note: If you already sent funds, you may need to wait until a miner processes it.`
+    );
+    Log(`Fund it, wait and <a href="javascript:start()">try again</a>`);
+  }
 
   console.log({
     compilePolicy,
