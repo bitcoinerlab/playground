@@ -82,7 +82,7 @@ const isTestnet = network === networks.testnet;
 const FINAL_ADDRESS = isTestnet
   ? 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge'
   : '3FYsjXPy81f96odShrKQoAiLFVmt6Tjf4g';
-const FEE = 1000;
+const FEE = 300; //The vsize of this tx will be ~147 vbytes. Pay ~2 sats/vbyte
 const EXPLORER = `https://blockstream.info/${isTestnet ? 'testnet' : ''}`;
 window.start = async () => {
   Log(`========== RUN ${run} @ ${new Date().toLocaleTimeString()} ==========`);
@@ -133,8 +133,16 @@ window.start = async () => {
   const descriptorExpression = `wsh(${isolatedMiniscript})`;
   Log(`Descriptor: ${descriptorExpression}`);
   let signersPubKeys;
-  if (FALLBACK_RECOVERY) signersPubKeys = [pubKeys['@FALLBACK']];
-  else signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@USER']];
+  if (FALLBACK_RECOVERY) {
+    Log(`In this test we are waiting to the FALLBACK_RECOVERY mechanism`);
+    signersPubKeys = [pubKeys['@FALLBACK']];
+  } else {
+    Log(`In this test we are using @USER+@CUSTODIAL normal co-operation`);
+    signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@USER']];
+  }
+  Log(
+    `You can change this behaviour by settting variable FALLBACK_RECOVERY = true / false`
+  );
   const vaultDescriptor = new Descriptor({
     expression: descriptorExpression,
     network,
@@ -165,10 +173,12 @@ window.start = async () => {
       Log(`Signing with the USER wallet`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@USER']! });
       Log(
-        `Now, the PSBT (partially signed by the USER) would be sent to the 3rd party:`
+        `Now, this PSBT (partially signed by the USER) would be sent to the 3rd party:`
       );
       Log(psbt.toBase64());
-      Log(`And the 3rd party would sign it and give it back to the user.`);
+      Log(
+        `And the 3rd party would give the signed Psbt back to the user to be finalized and pushed to the network.`
+      );
       signers.signBIP32({ psbt, masterNode: masterNodes['@CUSTODIAL']! });
     }
     //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
