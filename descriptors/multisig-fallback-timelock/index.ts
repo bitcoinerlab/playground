@@ -45,12 +45,9 @@ const FAUCET = 'https://bitcoinfaucet.uo1.net';
 //JSON to pretty-string format:
 const JSONf = (json: object) => {
   const jsonString = JSON.stringify(json, null, ' ');
-  const firstKeyIndex = jsonString.indexOf('{');
-  const lastKeyIndex = jsonString.lastIndexOf('}');
-  const trimmedJsonString = jsonString.substring(
-    firstKeyIndex,
-    lastKeyIndex + 1
-  );
+  const firstKeyI = jsonString.indexOf('{');
+  const lastKeyI = jsonString.lastIndexOf('}');
+  const trimmedJsonString = jsonString.substring(firstKeyI + 1, lastKeyI);
   return `<pre style="white-space:pre-wrap;overflow-wrap:break-word;">
   ${trimmedJsonString}</pre>`;
 };
