@@ -196,13 +196,13 @@ window.start = async () => {
       Log(`Signing with the FALLBACK key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@FALLBACK']! });
     } else {
-      Log(`Now, assume a PSBT is sent to the cosigner so that it is signed:`);
+      Log(`Now, the PSBT below would be sent to the cosigner:`);
       Log(psbt.toBase64());
-      Log(`Signing with the COSIGNER key...`);
+      Log(`COSIGNER signing the PSBT...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@COSIGNER']! });
       Log(`Now, the cosigner would send back the signed PSBT to the user to be
           finalized and pushed to the network.`);
-      Log(`Signing with the USER key...`);
+      Log(`USER signing with their key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@USER']! });
     }
     //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
@@ -222,7 +222,7 @@ window.start = async () => {
       const txId = spendTx.getId();
       Log(
         `Successfully pushed! <a target=_blank href="${EXPLORER}/tx/${txId}">
-        Check progress here.</a>`
+        Check the transaction here.</a>`
       );
     }
   } else {
