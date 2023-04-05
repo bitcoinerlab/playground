@@ -6,10 +6,10 @@
  * the user to fund the wallet, and spend from the wallet by sending funds to a
  * designated FINAL_ADDRESS.
  * There are two ways to spend from the wallet. In normal operation (when
- * FALLBACK_RECOVERY = false), a cosigner must cooperate and sign the
- * transaction. However, after a specified number of blocks have passed, the
+ * FALLBACK_RECOVERY = false), a COSIGNER must cooperate with the USER and sign
+ * the transaction. However, after a specified number of blocks have passed, the
  * user can use a FALLBACK key to spend the funds. This simulates a scenario
- * where the cosigner is uncooperative, out of service, out of business, or has
+ * where the COSIGNER is uncooperative, out of service, out of business, or has
  * become a bad actor.
  *
  * To simplify this example, only the first unspent transaction output (UTXO) of
