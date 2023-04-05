@@ -155,14 +155,14 @@ const descriptorExpression = `wsh(${isolatedMiniscript})`;
 Log(`Descriptor: <code>${descriptorExpression}</code>`);
 let signersPubKeys;
 const behaviourMsg = `You can change this behavior by editing the
-  <code>FALLBACK_RECOVERY</code> variable.`;
+  <code>FALLBACK_RECOVERY</code> setting.`;
 if (FALLBACK_RECOVERY) {
   Log(`The code is currently set to use the <b>fallback recovery mechanism</b>.
       ${behaviourMsg} Wait for the timelock to expire to access the funds.`);
   signersPubKeys = [pubKeys['@FALLBACK']];
 } else {
-  Log(`The code is currently set to use <b>normal cooperation between the user &
-      the cosigner</b>. ${behaviourMsg}`);
+  Log(`The code is currently set to use <b>normal cooperation between user and
+      cosigner</b>. ${behaviourMsg}`);
   signersPubKeys = [pubKeys['@COSIGNER'], pubKeys['@USER']];
 }
 const descriptor = new Descriptor({
@@ -177,8 +177,8 @@ window.start = async () => {
     await (await fetch(`${EXPLORER}/api/blocks/tip/height`)).text(),
     10
   );
-  Log(`===== RUN: #${run++} · BLOCK HEIGHT: ${currentBlockHeight} · 
-      TIME: ${new Date().toLocaleTimeString()} =====`);
+  Log(`<b>===== RUN: #${run++} · BLOCK HEIGHT: ${currentBlockHeight} · 
+      TIME: ${new Date().toLocaleTimeString()} =====</b>`);
   Log(`Let's check if the wallet has funds...`);
   const utxo = await (
     await fetch(`${EXPLORER}/api/address/${walletAddress}/utxo`)
