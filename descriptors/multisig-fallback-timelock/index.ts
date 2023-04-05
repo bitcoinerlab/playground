@@ -2,21 +2,33 @@
 // Distributed under the MIT software license
 
 /*
- * Important notes:
+ * This playground demonstrates how to create a multi-signature wallet, prompt
+ * the user to fund the wallet, and spend from the wallet by sending funds to a
+ * designated FINAL_ADDRESS.
+ * There are two ways to spend from the wallet. In normal operation (when
+ * FALLBACK_RECOVERY = false), a cosigner must cooperate and sign the
+ * transaction. However, after a specified number of blocks have passed, the
+ * user can use a FALLBACK key to spend the funds. This simulates a scenario
+ * where the cosigner is uncooperative, out of service, out of business, or has
+ * become a bad actor.
  *
- * Differently to the other playgrounds, this one has been designed exclussively
- * to be run on a browser-like environment to be run on:
- * https://bitcoinerlab.com/guides/multisig-fallback-timelock
+ * To simplify this example, only the first unspent transaction output (UTXO) of
+ * the first address of the Wallet is considered. Looping over all  addresses
+ * and UTXOs is left as an exercise for the user.
+ * Additionally, we won't differentiate between internal or external addresses.
  *
- * In order to simplify this example, only the first utxo of the first address
- * of each account is considered.
- * Looping over all the addresses and utxos is left as an excercise to the user.
- * Also, we won't differentiate between internal or external addresses.
+ * The code below includes boilerplate initialization code and some helper
+ * functions. To set up the program, jump to the "SETTINGS" block. To read
+ * the code, go to the "THE PROGRAM STARTS HERE" block.
+ *
+ * Unlike the other playgrounds, this one is designed to be run exclusively on a
+ * browser-like environment, specifically at
+ * https://bitcoinerlab.com/guides/multisig-fallback-timelock.
  */
 
-//The code below is just some boiler-plate initalizing stuff and some helper
-//functions. Jump to the "The program starts here" block below
-
+// =============================================================================
+// BOILERPLATE (initalization, helper functions...):
+// =============================================================================
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
@@ -32,11 +44,8 @@ const FAUCET = 'https://bitcoinfaucet.uo1.net';
 
 //JSON to pretty-string format:
 const JSONf = (json: object) =>
-  `<pre style="white-space:pre-wrap;overflow-wrap:break-word;">${JSON.stringify(
-    json,
-    null,
-    '  '
-  )}</pre>`;
+  `<pre style="white-space:pre-wrap;overflow-wrap:break-word;">
+  ${JSON.stringify(json, null, '  ')}</pre>`;
 
 //Shows results on the browser:
 const Log = (message: string) => {
@@ -61,28 +70,39 @@ document.body.innerHTML = `<div id="logs"></div><div>
 </div>`;
 
 // =============================================================================
-// The program starts here
+// SETTINGS (edit to your convenience):
 // =============================================================================
-//Set FALLBACK_RECOVERY to true if not using Custodial+User cooperation:
+// Set FALLBACK_RECOVERY to true to simulate a scenario where the cosigner is
+// out of service or out of business:
 const FALLBACK_RECOVERY = false;
-const isTestnet = true; //Change it to false, for mainnet
+const isTestnet = true; //Change it to false, for mainnet. AT YOUR OWN RISK!!!
 const POLICY = (time: number) =>
-  `or(10@and(pk(@USER),pk(@CUSTODIAL)),and(older(${time}),pk(@FALLBACK)))`;
+  `or(10@and(pk(@USER),pk(@COSIGNER)),and(older(${time}),pk(@FALLBACK)))`;
 const BLOCKS = 2; //Number of blocks for the older() expression: ~20 minutes.
-//Origin can be any path you like. F.ex, use /48'/0'/0'/2' for musig, maninnet,
-//1st account & native segwit (read BIP48 for the details).
-//For this "multisig-fallback-timelock" example we chose a random non-standard origin:
+//ORIGIN_PATH can be any path you like. F.ex, ORIGIN_PATH= /48'/0'/0'/2' for
+//multisig, maninnet, 1st account & native segwit (read BIP48 for the details).
+//For this "multisig-fallback-timelock" example we chose a non-standard origin:
 const ORIGIN_PATH = "/69420'";
 //Now we must choose the speciffic path of the key within the origin.
-//F.ex, the first internal address in mu-sig would have been: /0/0
-//For the sake of keeping this simple, we will assume only one address per seed:
+//F.ex, the first external address in multisig would have been: /0/0
+//For the sake of keeping this simple, we will assume only one external address:
 const KEY_PATH = '/0';
-//This is the address that will get the funds after spending or fallback
+//Set the address that will get the funds when spending from the Wallet:
 const FINAL_ADDRESS = isTestnet
   ? 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge' //Testnet address
   : '3FYsjXPy81f96odShrKQoAiLFVmt6Tjf4g'; //Mainnet address
 const FEE = 300; //The vsize of this tx will be ~147 vbytes. Pay ~2 sats/vbyte
+//Set the mnemonics with quotes or generateMnemonic() to create random ones:
+const USER_MNEMONIC = generateMnemonic();
+const COSIGNER_MNEMONIC = 'oil oil oil oil oil oil oil oil oil oil oil oil';
+const FALLBACK_MNEMONIC = generateMnemonic();
+// =============================================================================
+// END OF SETTINGS
+// =============================================================================
 
+// =============================================================================
+// THE PROGRAM STARTS HERE:
+// =============================================================================
 const EXPLORER = `https://blockstream.info/${isTestnet ? 'testnet' : ''}`;
 const network = isTestnet ? networks.testnet : networks.bitcoin;
 //Try to retrieve the mnemonics from the browsers storage. If not there, then
@@ -91,11 +111,9 @@ const storedMnemonics = localStorage.getItem('mnemonics');
 const mnemonics = storedMnemonics
   ? JSON.parse(storedMnemonics)
   : {
-      //Here is where you would set the mnemonics with quotes or
-      //using generateMnemonic() to create random ones:
-      '@USER': generateMnemonic(),
-      '@CUSTODIAL': 'oil oil oil oil oil oil oil oil oil oil oil oil',
-      '@FALLBACK': generateMnemonic()
+      '@USER': USER_MNEMONIC,
+      '@COSIGNER': COSIGNER_MNEMONIC,
+      '@FALLBACK': FALLBACK_MNEMONIC
     };
 //Store them now in the browsers storage:
 localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
@@ -136,8 +154,8 @@ if (FALLBACK_RECOVERY) {
   );
   signersPubKeys = [pubKeys['@FALLBACK']];
 } else {
-  Log(`This test assumes normal @USER & @CUSTODIAL cooperation.`);
-  signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@USER']];
+  Log(`This test assumes normal @USER & @COSIGNER cooperation.`);
+  signersPubKeys = [pubKeys['@COSIGNER'], pubKeys['@USER']];
 }
 Log(
   `You can change this behaviour by settting variable
@@ -162,7 +180,7 @@ window.start = async () => {
     await fetch(`${EXPLORER}/api/address/${walletAddress}/utxo`)
   ).json();
   if (utxo?.[0]) {
-    Log(`Yes! Successfully funded. Now, let's move the funds.`);
+    Log(`Yes, it's funded! Now, let's try to spend the funds from the Wallet.`);
     const txHex = await (
       await fetch(`${EXPLORER}/api/tx/${utxo?.[0].txid}/hex`)
     ).text();
@@ -179,11 +197,11 @@ window.start = async () => {
     } else {
       Log(`Signing with the USER key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@USER']! });
-      Log(`Now, the PSBT (signed by the USER) would be sent to the custodial:`);
+      Log(`Now, the PSBT (signed by the USER) would be sent to the cosigner:`);
       Log(psbt.toBase64());
-      Log(`Now, the custodial would give the signed PSBT back to the user to be
-          finalized and pushed to the network.`);
-      signers.signBIP32({ psbt, masterNode: masterNodes['@CUSTODIAL']! });
+      Log(`Now, the cosigner party would give the signed PSBT back to the user
+          to be finalized and pushed to the network.`);
+      signers.signBIP32({ psbt, masterNode: masterNodes['@COSIGNER']! });
     }
     //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
     descriptor.finalizePsbtInput({ index: 0, psbt });
