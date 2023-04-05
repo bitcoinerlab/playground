@@ -78,7 +78,7 @@ document.body.innerHTML = `<div style="font-size:0.95em;" id="logs"></div><div>
 // SETTINGS (edit to your convenience):
 // =============================================================================
 // Set FALLBACK_RECOVERY to true to simulate a scenario where the cosigner is
-// out of service or out of business:
+// uncooperative, out of service or out of business:
 const FALLBACK_RECOVERY = false;
 const isTestnet = true; //Change it to false, for mainnet. AT YOUR OWN RISK!!!
 const POLICY = (time: number) =>
@@ -123,10 +123,10 @@ const mnemonics = storedMnemonics
 //Store them now in the browsers storage:
 localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
 
-Log(`Policy: ${POLICY(olderEncode({ blocks: BLOCKS }))}`);
+Log(`Policy: <code>${POLICY(olderEncode({ blocks: BLOCKS }))}</code>`);
 Log(`Mnemonics 🤫: ${JSONf(mnemonics)}`);
 const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
-Log(`Compiled miniscript: ${miniscript}`);
+Log(`Compiled miniscript: <code>${miniscript}</code>`);
 
 const keyExpressions: { [key: string]: string } = {};
 const masterNodes: { [key: string]: BIP32Interface } = {};
@@ -150,17 +150,17 @@ const isolatedMiniscript = miniscript.replace(
   (match, key) => keyExpressions[key] || match
 );
 const descriptorExpression = `wsh(${isolatedMiniscript})`;
-Log(`Descriptor: ${descriptorExpression}`);
+Log(`Descriptor: <code>${descriptorExpression}</code>`);
 let signersPubKeys;
-const behaviourMsg = `Change this behaviour by editing FALLBACK_RECOVERY.`;
+const behaviourMsg = `You can change this behavior by editing the
+  FALLBACK_RECOVERY variable.`;
 if (FALLBACK_RECOVERY) {
-  Log(
-    `Proceeding with the Fallback Recovery mechanism. ${behaviourMsg}
-     You'll need to wait for the timelock to expire to access the funds.`
-  );
+  Log(`The code is currently set to use the Fallback Recovery mechanism.
+      ${behaviourMsg} Wait for the timelock to expire to access the funds.`);
   signersPubKeys = [pubKeys['@FALLBACK']];
 } else {
-  Log(`Proceeding with normal @USER & @COSIGNER cooperation. ${behaviourMsg}`);
+  Log(`The code is currently set to use normal cooperation between @USER and
+      @COSIGNER. ${behaviourMsg}`);
   signersPubKeys = [pubKeys['@COSIGNER'], pubKeys['@USER']];
 }
 const descriptor = new Descriptor({
