@@ -129,14 +129,16 @@ const descriptorExpression = `wsh(${isolatedMiniscript})`;
 Log(`Descriptor: ${descriptorExpression}`);
 let signersPubKeys;
 if (FALLBACK_RECOVERY) {
-  Log(`In this test we are waiting to the FALLBACK_RECOVERY mechanism`);
+  Log(
+    `This test assumes the FALLBACK_RECOVERY mechanism. You'll need to wait for the timelock to expire to access the funds.`
+  );
   signersPubKeys = [pubKeys['@FALLBACK']];
 } else {
-  Log(`In this test we are using @USER+@CUSTODIAL normal co-operation`);
+  Log(`In this test assumes normal @USER+@CUSTODIAL co-operation.`);
   signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@USER']];
 }
 Log(
-  `You can change this behaviour by settting variable FALLBACK_RECOVERY = true / false`
+  `You can change this behaviour by settting variable FALLBACK_RECOVERY = true / false.`
 );
 const vaultDescriptor = new Descriptor({
   expression: descriptorExpression,
@@ -147,8 +149,12 @@ const vaultAddress = vaultDescriptor.getAddress();
 Log(`Vault address: ${vaultAddress}`);
 window.start = async () => {
   Log(`========== RUN ${run} @ ${new Date().toLocaleTimeString()} ==========`);
+  const currentBlockHeight = parseInt(
+    await (await fetch(`${EXPLORER}/api/blocks/tip/height`)).text()
+  );
+  Log(`Current block height: ${currentBlockHeight}`);
   run++;
-  Log(`Let's check if the Vault has funds...`);
+  Log(`Let's check if the Wallet has funds...`);
   const utxo = await (
     await fetch(`${EXPLORER}/api/address/${vaultAddress}/utxo`)
   ).json();
@@ -165,10 +171,10 @@ window.start = async () => {
     //forget to account for transaction fees!
     psbt.addOutput({ address: FINAL_ADDRESS, value: inputValue - FEE });
     if (FALLBACK_RECOVERY) {
-      Log(`Signing with the FALLBACK wallet...`);
+      Log(`Signing with the FALLBACK key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@FALLBACK']! });
     } else {
-      Log(`Signing with the USER wallet...`);
+      Log(`Signing with the USER key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@USER']! });
       Log(
         `Now, this PSBT (partially signed by the USER) would be sent to the 3rd party:`
@@ -190,7 +196,7 @@ window.start = async () => {
       })
     ).text();
     if (spendTxPushResult.match('non-BIP68-final')) {
-      Log(`This means it's still TimeLocked and miners rejected the tx.`);
+      Log(`The miners rejected this tx because it's timelocked.`);
       Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
     } else {
       const txId = spendTx.getId();
