@@ -48,7 +48,7 @@ const JSONf = (json: object) => {
   const firstKeyI = jsonString.indexOf('{');
   const lastKeyI = jsonString.lastIndexOf('}');
   const trimmedJsonString = jsonString.substring(firstKeyI + 1, lastKeyI);
-  return `<code style="white-space:pre-wrap;overflow-wrap:break-word;">
+  return `<code style="white-space:pre-line;overflow-wrap:break-word;">
   ${trimmedJsonString}</code>`;
 };
 
@@ -70,8 +70,8 @@ window.reset = () => {
   window.location.reload();
 };
 document.body.innerHTML = `<div style="font-size:0.95em;" id="logs"></div><div>
-<p><a href="javascript:start();">Run</a>&nbsp;&nbsp;&nbsp;&nbsp;
-<a href="javascript:reset();">Reset mnemonics</a></p>
+<p style="padding-bottom:50px;"><a href="javascript:start();">Run</a>
+&nbsp;&nbsp;&nbsp;&nbsp;<a href="javascript:reset();">Reset mnemonics</a></p>
 </div>`;
 
 // =============================================================================
