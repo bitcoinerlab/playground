@@ -43,9 +43,17 @@ const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 const FAUCET = 'https://bitcoinfaucet.uo1.net';
 
 //JSON to pretty-string format:
-const JSONf = (json: object) =>
-  `<pre style="white-space:pre-wrap;overflow-wrap:break-word;">
-  ${JSON.stringify(json, null, '  ')}</pre>`;
+const JSONf = (json: object) => {
+  const jsonString = JSON.stringify(json, null, ' ');
+  const firstKeyIndex = jsonString.indexOf('{');
+  const lastKeyIndex = jsonString.lastIndexOf('}');
+  const trimmedJsonString = jsonString.substring(
+    firstKeyIndex,
+    lastKeyIndex + 1
+  );
+  return `<pre style="white-space:pre-wrap;overflow-wrap:break-word;">
+  ${trimmedJsonString}</pre>`;
+};
 
 //Shows results on the browser:
 const Log = (message: string) => {
@@ -77,7 +85,7 @@ document.body.innerHTML = `<div style="font-size:0.95em;" id="logs"></div><div>
 const FALLBACK_RECOVERY = false;
 const isTestnet = true; //Change it to false, for mainnet. AT YOUR OWN RISK!!!
 const POLICY = (time: number) =>
-  `or(10@and(pk(@USER),pk(@COSIGNER)),and(older(${time}),pk(@FALLBACK)))`;
+  `or(9@and(pk(@USER),pk(@COSIGNER)),and(older(${time}),pk(@FALLBACK)))`;
 const BLOCKS = 2; //Number of blocks for the older() expression: ~20 minutes.
 //ORIGIN_PATH can be any path you like. F.ex, ORIGIN_PATH= /48'/0'/0'/2' for
 //multisig, maninnet, 1st account & native segwit (read BIP48 for the details).
@@ -157,10 +165,7 @@ if (FALLBACK_RECOVERY) {
   Log(`This test assumes normal @USER & @COSIGNER cooperation.`);
   signersPubKeys = [pubKeys['@COSIGNER'], pubKeys['@USER']];
 }
-Log(
-  `You can change this behaviour by settting variable
-  FALLBACK_RECOVERY = true / false.`
-);
+Log(`You can change this behaviour by editing the variable FALLBACK_RECOVERY.`);
 const descriptor = new Descriptor({
   expression: descriptorExpression,
   network,
