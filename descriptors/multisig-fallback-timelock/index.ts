@@ -156,7 +156,7 @@ const isolatedMiniscript = miniscript.replace(
 const descriptorExpression = `wsh(${isolatedMiniscript})`;
 Log(`Descriptor: <code>${descriptorExpression}</code>`);
 let signersPubKeys;
-const behaviourMsg = `You can change this behavior by editing the
+const behaviourMsg = `Change this behavior by editing the
   <code>FALLBACK_RECOVERY</code> setting.`;
 if (FALLBACK_RECOVERY) {
   Log(`The code is currently set to use the <b>fallback recovery mechanism</b>.
@@ -201,13 +201,13 @@ window.start = async () => {
       Log(`Signing with the FALLBACK key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@FALLBACK']! });
     } else {
-      Log(`Now, the PSBT below would be sent to the cosigner:`);
+      Log(`A PSBT is now created and sent to the cosigner:`);
       Log(psbt.toBase64());
-      Log(`COSIGNER signing the PSBT...`);
+      Log(`The COSIGNER receives and signs the PSBT...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@COSIGNER']! });
-      Log(`Now, the cosigner would send back the signed PSBT to the user to be
+      Log(`Now, the cosigner sends back the signed PSBT to the user to be
           finalized and pushed to the network.`);
-      Log(`USER signing with their key...`);
+      Log(`The USER signs the PSBT with their key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@USER']! });
     }
     //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
