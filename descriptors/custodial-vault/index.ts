@@ -84,73 +84,71 @@ const FINAL_ADDRESS = isTestnet
   : '3FYsjXPy81f96odShrKQoAiLFVmt6Tjf4g';
 const FEE = 300; //The vsize of this tx will be ~147 vbytes. Pay ~2 sats/vbyte
 const EXPLORER = `https://blockstream.info/${isTestnet ? 'testnet' : ''}`;
+//Try to retrieve the mnemonics from the browsers storage. If not there, then
+//create some random mnemonics (or assign any mnemonic we choose)
+const storedMnemonics = localStorage.getItem('mnemonics');
+const mnemonics = storedMnemonics
+  ? JSON.parse(storedMnemonics)
+  : {
+      //Here is where you would set the mnemonics.
+      //Use generateMnemonic to create random ones or assign one with quotes:
+      '@USER': generateMnemonic(),
+      '@CUSTODIAL': 'oil oil oil oil oil oil oil oil oil oil oil oil',
+      '@FALLBACK': generateMnemonic()
+    };
+//Store them now in the browsers storage:
+localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
+
+Log(`Policy: ${POLICY(olderEncode({ blocks: BLOCKS }))}`);
+Log(`Mnemonics 🤫: ${JSONf(mnemonics)}`);
+const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
+Log(`Compiled miniscript: ${miniscript}`);
+
+const keyExpressions: { [key: string]: string } = {};
+const masterNodes: { [key: string]: BIP32Interface } = {};
+const pubKeys: { [key: string]: Buffer } = {};
+for (const key in mnemonics) {
+  const mnemonic = mnemonics[key];
+  const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
+  masterNodes[key] = masterNode;
+  keyExpressions[key] = descriptors.keyExpressionBIP32({
+    masterNode,
+    originPath: ORIGIN_PATH,
+    keyPath: KEY_PATH
+  });
+  pubKeys[key] = masterNode.derivePath(`m${ORIGIN_PATH}${KEY_PATH}`).publicKey;
+}
+
+Log(`Key expressions: ${JSONf(keyExpressions)}`);
+//Let's replace the pub key @VARIABLES with their respective key expressions:
+const isolatedMiniscript = miniscript.replace(
+  /(@\w+)/g,
+  (match, key) => keyExpressions[key] || match
+);
+const descriptorExpression = `wsh(${isolatedMiniscript})`;
+Log(`Descriptor: ${descriptorExpression}`);
+let signersPubKeys;
+if (FALLBACK_RECOVERY) {
+  Log(`In this test we are waiting to the FALLBACK_RECOVERY mechanism`);
+  signersPubKeys = [pubKeys['@FALLBACK']];
+} else {
+  Log(`In this test we are using @USER+@CUSTODIAL normal co-operation`);
+  signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@USER']];
+}
+Log(
+  `You can change this behaviour by settting variable FALLBACK_RECOVERY = true / false`
+);
+const vaultDescriptor = new Descriptor({
+  expression: descriptorExpression,
+  network,
+  signersPubKeys: signersPubKeys as Buffer[]
+});
+const vaultAddress = vaultDescriptor.getAddress();
+Log(`Vault address: ${vaultAddress}`);
 window.start = async () => {
   Log(`========== RUN ${run} @ ${new Date().toLocaleTimeString()} ==========`);
   run++;
-  //Try to retrieve the mnemonics from the browsers storage. If not there, then
-  //create some random mnemonics (or assign any mnemonic we choose)
-  const storedMnemonics = localStorage.getItem('mnemonics');
-  const mnemonics = storedMnemonics
-    ? JSON.parse(storedMnemonics)
-    : {
-        //Here is where you would set the mnemonics.
-        //Use generateMnemonic to create random ones or assign one with quotes:
-        '@USER': generateMnemonic(),
-        '@CUSTODIAL': 'oil oil oil oil oil oil oil oil oil oil oil oil',
-        '@FALLBACK': generateMnemonic()
-      };
-  //Store them now in the browsers storage:
-  localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
-
-  Log(`Policy: ${POLICY(olderEncode({ blocks: BLOCKS }))}`);
-  Log(`Mnemonics 🤫: ${JSONf(mnemonics)}`);
-  const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
-  Log(`Compiled miniscript: ${miniscript}`);
-
-  const keyExpressions: { [key: string]: string } = {};
-  const masterNodes: { [key: string]: BIP32Interface } = {};
-  const pubKeys: { [key: string]: Buffer } = {};
-  for (const key in mnemonics) {
-    const mnemonic = mnemonics[key];
-    const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
-    masterNodes[key] = masterNode;
-    keyExpressions[key] = descriptors.keyExpressionBIP32({
-      masterNode,
-      originPath: ORIGIN_PATH,
-      keyPath: KEY_PATH
-    });
-    pubKeys[key] = masterNode.derivePath(
-      `m${ORIGIN_PATH}${KEY_PATH}`
-    ).publicKey;
-  }
-
-  Log(`Key expressions: ${JSONf(keyExpressions)}`);
-  //Let's replace the pub key @VARIABLES with their respective key expressions:
-  const isolatedMiniscript = miniscript.replace(
-    /(@\w+)/g,
-    (match, key) => keyExpressions[key] || match
-  );
-  const descriptorExpression = `wsh(${isolatedMiniscript})`;
-  Log(`Descriptor: ${descriptorExpression}`);
-  let signersPubKeys;
-  if (FALLBACK_RECOVERY) {
-    Log(`In this test we are waiting to the FALLBACK_RECOVERY mechanism`);
-    signersPubKeys = [pubKeys['@FALLBACK']];
-  } else {
-    Log(`In this test we are using @USER+@CUSTODIAL normal co-operation`);
-    signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@USER']];
-  }
-  Log(
-    `You can change this behaviour by settting variable FALLBACK_RECOVERY = true / false`
-  );
-  const vaultDescriptor = new Descriptor({
-    expression: descriptorExpression,
-    network,
-    signersPubKeys: signersPubKeys as Buffer[]
-  });
-  const vaultAddress = vaultDescriptor.getAddress();
-  Log(`Vault address: ${vaultAddress}`);
-  Log(`Let's check if it has some funds...`);
+  Log(`Let's check if the Vault has funds...`);
   const utxo = await (
     await fetch(`${EXPLORER}/api/address/${vaultAddress}/utxo`)
   ).json();
@@ -167,37 +165,37 @@ window.start = async () => {
     //forget to account for transaction fees!
     psbt.addOutput({ address: FINAL_ADDRESS, value: inputValue - FEE });
     if (FALLBACK_RECOVERY) {
-      Log(`Signing with the Fallback wallet`);
+      Log(`Signing with the FALLBACK wallet...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@FALLBACK']! });
     } else {
-      Log(`Signing with the USER wallet`);
+      Log(`Signing with the USER wallet...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@USER']! });
       Log(
         `Now, this PSBT (partially signed by the USER) would be sent to the 3rd party:`
       );
       Log(psbt.toBase64());
       Log(
-        `And the 3rd party would give the signed Psbt back to the user to be finalized and pushed to the network.`
+        `Now, the 3rd party would give the signed PSBT back to the user to be finalized and pushed to the network.`
       );
       signers.signBIP32({ psbt, masterNode: masterNodes['@CUSTODIAL']! });
     }
     //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
     vaultDescriptor.finalizePsbtInput({ index: 0, psbt });
     const spendTx = psbt.extractTransaction();
+    Log(`Pushing the tx...`);
     const spendTxPushResult = await (
       await fetch(`${EXPLORER}/api/tx`, {
         method: 'POST',
         body: spendTx.toHex()
       })
     ).text();
-    Log(`Pushing: ${spendTx.toHex()}`);
     if (spendTxPushResult.match('non-BIP68-final')) {
       Log(`This means it's still TimeLocked and miners rejected the tx.`);
       Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
     } else {
       const txId = spendTx.getId();
       Log(
-        `Pushed it. <a target=_blank href="${EXPLORER}/tx/${txId}?expand">Check progress here!</a>`
+        `Pushed it! <a target=_blank href="${EXPLORER}/tx/${txId}?expand">Check progress here.</a>`
       );
     }
   } else {
