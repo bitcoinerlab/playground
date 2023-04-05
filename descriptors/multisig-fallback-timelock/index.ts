@@ -152,17 +152,17 @@ const isolatedMiniscript = miniscript.replace(
 const descriptorExpression = `wsh(${isolatedMiniscript})`;
 Log(`Descriptor: ${descriptorExpression}`);
 let signersPubKeys;
+const behaviourMsg = `Change this behaviour by editing FALLBACK_RECOVERY.`;
 if (FALLBACK_RECOVERY) {
   Log(
-    `This test assumes the FALLBACK_RECOVERY mechanism.
+    `Proceeding with the Fallback Recovery mechanism. ${behaviourMsg}
      You'll need to wait for the timelock to expire to access the funds.`
   );
   signersPubKeys = [pubKeys['@FALLBACK']];
 } else {
-  Log(`This test assumes normal @USER & @COSIGNER cooperation.`);
+  Log(`Proceeding with normal @USER & @COSIGNER cooperation. ${behaviourMsg}`);
   signersPubKeys = [pubKeys['@COSIGNER'], pubKeys['@USER']];
 }
-Log(`You can change this behaviour by editing the variable FALLBACK_RECOVERY.`);
 const descriptor = new Descriptor({
   expression: descriptorExpression,
   network,
