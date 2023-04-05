@@ -47,7 +47,7 @@ const JSONf = (json: object) => {
   const jsonString = JSON.stringify(json, null, ' ');
   const firstKeyI = jsonString.indexOf('{');
   const lastKeyI = jsonString.lastIndexOf('}');
-  const trimmedJsonString = jsonString.substring(firstKeyI + 1, lastKeyI);
+  const trimmedJsonString = jsonString.substring(firstKeyI + 3, lastKeyI);
   return `<code style="white-space:pre-line;overflow-wrap:break-word;">
   ${trimmedJsonString}</code>`;
 };
@@ -171,13 +171,12 @@ const descriptor = new Descriptor({
 const walletAddress = descriptor.getAddress();
 Log(`Wallet address: ${walletAddress}`);
 window.start = async () => {
-  Log(`========== RUN ${run} @ ${new Date().toLocaleTimeString()} ==========`);
   const currentBlockHeight = parseInt(
     await (await fetch(`${EXPLORER}/api/blocks/tip/height`)).text(),
     10
   );
-  Log(`Current block height: ${currentBlockHeight}`);
-  run++;
+  Log(`===== RUN: #${run++} · BLOCK HEIGHT: ${currentBlockHeight} · 
+      TIME: ${new Date().toLocaleTimeString()} =====`);
   Log(`Let's check if the wallet has funds...`);
   const utxo = await (
     await fetch(`${EXPLORER}/api/address/${walletAddress}/utxo`)
