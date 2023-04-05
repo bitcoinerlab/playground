@@ -19,8 +19,10 @@
 
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
+const signers = descriptors.signers;
 import { compilePolicy } from '@bitcoinerlab/miniscript';
 import { Psbt, networks } from 'bitcoinjs-lib';
+import type { BIP32Interface } from 'bip32';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
@@ -75,12 +77,15 @@ const ORIGIN_PATH = "/69420'";
 //F.ex, the first internal address in mu-sig would have been: /0/0
 //For the sake of keeping this simple, we will assume only one address per seed:
 const KEY_PATH = '/0';
-
-const EXPLORER = `https://blockstream.info/${
-  network === networks.testnet ? 'testnet' : ''
-}`;
+const isTestnet = network === networks.testnet;
+//This is the address that will get the funds after unvaulting or fallback
+const FINAL_ADDRESS = isTestnet
+  ? 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge'
+  : '3FYsjXPy81f96odShrKQoAiLFVmt6Tjf4g';
+const FEE = 1000;
+const EXPLORER = `https://blockstream.info/${isTestnet ? 'testnet' : ''}`;
 window.start = async () => {
-  Log(`=== RUN ${run} ===`);
+  Log(`========== RUN ${run} @ ${new Date().toLocaleTimeString()} ==========`);
   run++;
   //Try to retrieve the mnemonics from the browsers storage. If not there, then
   //create some random mnemonics (or assign any mnemonic we choose)
@@ -97,16 +102,18 @@ window.start = async () => {
   //Store them now in the browsers storage:
   localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
 
-  Log(`The policy: ${POLICY(olderEncode({ blocks: BLOCKS }))}`);
-  Log(`The mnemonics 🤫: ${JSONf(mnemonics)}`);
+  Log(`Policy: ${POLICY(olderEncode({ blocks: BLOCKS }))}`);
+  Log(`Mnemonics 🤫: ${JSONf(mnemonics)}`);
   const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
-  Log(`The compiled miniscript: ${miniscript}`);
+  Log(`Compiled miniscript: ${miniscript}`);
 
   const keyExpressions: { [key: string]: string } = {};
+  const masterNodes: { [key: string]: BIP32Interface } = {};
   const pubKeys: { [key: string]: Buffer } = {};
   for (const key in mnemonics) {
     const mnemonic = mnemonics[key];
     const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
+    masterNodes[key] = masterNode;
     keyExpressions[key] = descriptors.keyExpressionBIP32({
       masterNode,
       originPath: ORIGIN_PATH,
@@ -117,14 +124,14 @@ window.start = async () => {
     ).publicKey;
   }
 
-  Log(`The key expressions: ${JSONf(keyExpressions)}`);
+  Log(`Key expressions: ${JSONf(keyExpressions)}`);
   //Let's replace the pub key @VARIABLES with their respective key expressions:
   const isolatedMiniscript = miniscript.replace(
     /(@\w+)/g,
     (match, key) => keyExpressions[key] || match
   );
   const descriptorExpression = `wsh(${isolatedMiniscript})`;
-  Log(`The descriptor: ${descriptorExpression}`);
+  Log(`Descriptor: ${descriptorExpression}`);
   let signersPubKeys;
   if (FALLBACK_RECOVERY) signersPubKeys = [pubKeys['@FALLBACK']];
   else signersPubKeys = [pubKeys['@CUSTODIAL'], pubKeys['@USER']];
@@ -134,116 +141,66 @@ window.start = async () => {
     signersPubKeys: signersPubKeys as Buffer[]
   });
   const vaultAddress = vaultDescriptor.getAddress();
-  Log(`The vault address: ${vaultAddress}`);
+  Log(`Vault address: ${vaultAddress}`);
   Log(`Let's check if it has some funds...`);
   const utxo = await (
     await fetch(`${EXPLORER}/api/address/${vaultAddress}/utxo`)
   ).json();
   if (utxo?.[0]) {
     Log(`Yes! Successfully funded. Now let's spend the funds.`);
-  } else {
-    if (network === networks.testnet)
+    const txHex = await (
+      await fetch(`${EXPLORER}/api/tx/${utxo?.[0].txid}/hex`)
+    ).text();
+    const inputValue = utxo[0].value;
+    const psbt = new Psbt({ network });
+    vaultDescriptor.updatePsbt({ psbt, txHex, vout: utxo[0].vout });
+    //For the purpose of this guide, we add an output to send funds to hardcoded
+    //addresses, which we don't care about, just to show how to use the API. Don't
+    //forget to account for transaction fees!
+    psbt.addOutput({ address: FINAL_ADDRESS, value: inputValue - FEE });
+    if (FALLBACK_RECOVERY) {
+      Log(`Signing with the Fallback wallet`);
+      signers.signBIP32({ psbt, masterNode: masterNodes['@FALLBACK']! });
+    } else {
+      Log(`Signing with the USER wallet`);
+      signers.signBIP32({ psbt, masterNode: masterNodes['@USER']! });
       Log(
-        `Not yet! You can use <a href="${FAUCET}" target=_blank>${FAUCET}</a> to fund it.`
+        `Now, the PSBT (partially signed by the USER) would be sent to the 3rd party:`
       );
-    else Log(`Not yet! You still need to send there some sats.`);
+      Log(psbt.toBase64());
+      Log(`And the 3rd party would sign it and give it back to the user.`);
+      signers.signBIP32({ psbt, masterNode: masterNodes['@CUSTODIAL']! });
+    }
+    //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
+    vaultDescriptor.finalizePsbtInput({ index: 0, psbt });
+    const spendTx = psbt.extractTransaction();
+    const spendTxPushResult = await (
+      await fetch(`${EXPLORER}/api/tx`, {
+        method: 'POST',
+        body: spendTx.toHex()
+      })
+    ).text();
+    Log(`Pushing: ${spendTx.toHex()}`);
+    if (spendTxPushResult.match('non-BIP68-final')) {
+      Log(`This means it's still TimeLocked and miners rejected the tx.`);
+      Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
+    } else {
+      const txId = spendTx.getId();
+      Log(
+        `Pushed it. <a target=_blank href="${EXPLORER}/tx/${txId}?expand">Check progress here!</a>`
+      );
+    }
+  } else {
+    if (isTestnet)
+      Log(
+        `Not yet! You can use <a href="${FAUCET}" target=_blank>${FAUCET}</a> to fund ${vaultAddress}.`
+      );
+    else Log(`Not yet! You still need to send some sats to ${vaultAddress}.`);
     Log(
       `Note: If you already sent funds, you may need to wait until a miner processes it.`
     );
-    Log(`Fund it, wait and <a href="javascript:start()">try again</a>`);
+    Log(
+      `Fund it, wait a bit so that it is processed and <a href="javascript:start()">try again</a>.`
+    );
   }
-
-  console.log({
-    compilePolicy,
-    Psbt,
-    Descriptor,
-    ORIGIN_PATH,
-    KEY_PATH,
-    EXPLORER,
-    POLICY,
-    mnemonicToSeedSync,
-    BLOCKS
-  });
 };
-
-//const start = async () => {
-//  const currentBlockHeight = parseInt(
-//    await (await fetch(`${EXPLORER}/api/blocks/tip/height`)).text()
-//  );
-//  const after = afterEncode({ blocks: currentBlockHeight + BLOCKS });
-//  Log(`Current block height: ${currentBlockHeight}`);
-//  //Now let's prepare the wsh utxo:
-//  const { miniscript, issane } = compilePolicy(POLICY(after));
-//  if (!issane) throw new Error(`Error: miniscript not sane`);
-//  const unvaultKey = unvaultMasterNode.derivePath(
-//    `m${ORIGIN_PATH}${KEY_PATH}`
-//  ).publicKey;
-//  const wshExpression = `wsh(${miniscript
-//    .replace(
-//      '@unvaultKey',
-//      descriptors.keyExpressionBIP32({
-//        masterNode: unvaultMasterNode,
-//        originPath: ORIGIN_PATH,
-//        keyPath: KEY_PATH
-//      })
-//    )
-//    .replace('@emergencyKey', emergencyPair.publicKey.toString('hex'))})`;
-//  const wshDescriptor = new Descriptor({
-//    expression: wshExpression,
-//    network,
-//    signersPubKeys: [EMERGENCY_RECOVERY ? emergencyPair.publicKey : unvaultKey]
-//  });
-//  const wshAddress = wshDescriptor.getAddress();
-//  Log(`Fund your vault. Let's first check if it's been already funded...`);
-//  const utxo = await (
-//    await fetch(`${EXPLORER}/api/address/${wshAddress}/utxo`)
-//  ).json();
-//  if (utxo?.[0]) {
-//    Log(`Successfully funded. Now let's spend the funds.`);
-//    const txHex = await (
-//      await fetch(`${EXPLORER}/api/tx/${utxo?.[0].txid}/hex`)
-//    ).text();
-//    const inputValue = utxo[0].value;
-//    const psbt = new Psbt({ network });
-//    wshDescriptor.updatePsbt({ psbt, txHex, vout: utxo[0].vout });
-//    //For the purpose of this guide, we add an output to send funds to hardcoded
-//    //addresses, which we don't care about, just to show how to use the API. Don't
-//    //forget to account for transaction fees!
-//    psbt.addOutput({
-//      address: EMERGENCY_RECOVERY
-//        ? 'mkpZhYtJu2r87Js3pDiWJDmPte2NRZ8bJV'
-//        : 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge',
-//      value: inputValue - 1000
-//    });
-//
-//    //Now sign the PSBT with the BIP32 node (the software wallet)
-//    if (EMERGENCY_RECOVERY)
-//      descriptors.signers.signECPair({ psbt, ecpair: emergencyPair });
-//    else descriptors.signers.signBIP32({ psbt, masterNode: unvaultMasterNode });
-//    //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
-//    wshDescriptor.finalizePsbtInput({ index: 0, psbt });
-//    const spendTx = psbt.extractTransaction();
-//    const spendTxPushResult = await (
-//      await fetch(`${EXPLORER}/api/tx`, {
-//        method: 'POST',
-//        body: spendTx.toHex()
-//      })
-//    ).text();
-//    Log(`Pushing: ${spendTx.toHex()}`);
-//    Log(`Tx pushed with result: ${spendTxPushResult}`);
-//    //You may get non-bip68 final now. You need to wait 5 blocks.
-//    if (
-//      spendTxPushResult.match('non-BIP68-final') ||
-//      spendTxPushResult.match('non-final')
-//    ) {
-//      Log(`This means it's still TimeLocked and miners rejected the tx.`);
-//      Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
-//    } else {
-//      const txId = spendTx.getId();
-//      Log(`Success. <a href="${EXPLORER}/tx/${txId}?expand">Check it!</a>`);
-//    }
-//  } else {
-//    Log(`Not yet! Use https://bitcoinfaucet.uo1.net to send some sats to:`);
-//    Log(`${wshAddress} Fund it & <a href="javascript:start()">check again</a>`);
-//  }
-//};
