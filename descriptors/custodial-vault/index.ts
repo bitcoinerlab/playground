@@ -68,7 +68,7 @@ const FALLBACK_RECOVERY = false;
 const network = networks.testnet; //change it to "networks.bitcoin", for mainnet
 const POLICY = (time: number) =>
   `or(and(pk(@USER),pk(@CUSTODIAL)),and(older(${time}),pk(@FALLBACK)))`;
-const BLOCKS = 5;
+const BLOCKS = 2; //20 minutes...
 //Origin can be any path you like. F.ex, use /48'/0'/0'/2' for musig, maninnet,
 //1st account & native segwit (read BIP48 for the details).
 //For this "custodial-vault" example we choose any non-standard origin. F.ex.:
