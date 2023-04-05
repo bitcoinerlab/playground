@@ -48,8 +48,8 @@ const JSONf = (json: object) => {
   const firstKeyI = jsonString.indexOf('{');
   const lastKeyI = jsonString.lastIndexOf('}');
   const trimmedJsonString = jsonString.substring(firstKeyI + 1, lastKeyI);
-  return `<pre style="white-space:pre-wrap;overflow-wrap:break-word;">
-  ${trimmedJsonString}</pre>`;
+  return `<code style="white-space:pre-wrap;overflow-wrap:break-word;">
+  ${trimmedJsonString}</code>`;
 };
 
 //Shows results on the browser:
