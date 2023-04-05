@@ -19,13 +19,13 @@
 
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
-const signers = descriptors.signers;
 import { compilePolicy } from '@bitcoinerlab/miniscript';
 import { Psbt, networks } from 'bitcoinjs-lib';
 import type { BIP32Interface } from 'bip32';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
+const signers = descriptors.signers;
 
 const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 const FAUCET = 'https://bitcoinfaucet.uo1.net';
