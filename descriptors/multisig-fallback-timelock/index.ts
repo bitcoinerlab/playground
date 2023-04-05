@@ -123,6 +123,8 @@ const mnemonics = storedMnemonics
 //Store them now in the browsers storage:
 localStorage.setItem('mnemonics', JSON.stringify(mnemonics));
 
+Log(`Edit the settings below in the code editor on the left. The code will
+  automatically recompile after editing. Click Run at the bottom when ready.`);
 Log(`Policy: <code>${POLICY(olderEncode({ blocks: BLOCKS }))}</code>`);
 Log(`Mnemonics 🤫: ${JSONf(mnemonics)}`);
 const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
@@ -153,14 +155,14 @@ const descriptorExpression = `wsh(${isolatedMiniscript})`;
 Log(`Descriptor: <code>${descriptorExpression}</code>`);
 let signersPubKeys;
 const behaviourMsg = `You can change this behavior by editing the
-  FALLBACK_RECOVERY variable.`;
+  <code>FALLBACK_RECOVERY</code> variable.`;
 if (FALLBACK_RECOVERY) {
-  Log(`The code is currently set to use the Fallback Recovery mechanism.
+  Log(`The code is currently set to use the <b>fallback recovery mechanism</b>.
       ${behaviourMsg} Wait for the timelock to expire to access the funds.`);
   signersPubKeys = [pubKeys['@FALLBACK']];
 } else {
-  Log(`The code is currently set to use normal cooperation between @USER and
-      @COSIGNER. ${behaviourMsg}`);
+  Log(`The code is currently set to use <b>normal cooperation between the user &
+      the cosigner</b>. ${behaviourMsg}`);
   signersPubKeys = [pubKeys['@COSIGNER'], pubKeys['@USER']];
 }
 const descriptor = new Descriptor({
