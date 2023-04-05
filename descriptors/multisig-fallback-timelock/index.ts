@@ -171,7 +171,8 @@ Log(`Wallet address: ${walletAddress}`);
 window.start = async () => {
   Log(`========== RUN ${run} @ ${new Date().toLocaleTimeString()} ==========`);
   const currentBlockHeight = parseInt(
-    await (await fetch(`${EXPLORER}/api/blocks/tip/height`)).text()
+    await (await fetch(`${EXPLORER}/api/blocks/tip/height`)).text(),
+    10
   );
   Log(`Current block height: ${currentBlockHeight}`);
   run++;
