@@ -53,7 +53,7 @@ declare global {
 }
 window.reset = () => {
   localStorage.clear();
-  window.start();
+  window.location.reload();
 };
 document.body.innerHTML = `<div id="logs"></div><div>
 <p><a href="javascript:start();">Run</a>&nbsp;&nbsp;&nbsp;&nbsp;
@@ -67,7 +67,7 @@ document.body.innerHTML = `<div id="logs"></div><div>
 const FALLBACK_RECOVERY = false;
 const network = networks.testnet; //change it to "networks.bitcoin", for mainnet
 const POLICY = (time: number) =>
-  `or(and(pk(@USER),pk(@CUSTODIAL)),and(older(${time}),pk(@FALLBACK)))`;
+  `or(10@and(pk(@USER),pk(@CUSTODIAL)),and(older(${time}),pk(@FALLBACK)))`;
 const BLOCKS = 2; //20 minutes...
 //Origin can be any path you like. F.ex, use /48'/0'/0'/2' for musig, maninnet,
 //1st account & native segwit (read BIP48 for the details).
@@ -200,7 +200,7 @@ window.start = async () => {
     } else {
       const txId = spendTx.getId();
       Log(
-        `Pushed it! <a target=_blank href="${EXPLORER}/tx/${txId}?expand">
+        `Successfully pushed! <a target=_blank href="${EXPLORER}/tx/${txId}?expand">
         Check progress here.</a>`
       );
     }
@@ -213,7 +213,7 @@ window.start = async () => {
     else Log(`Not yet! You still need to send some sats to ${vaultAddress}.`);
     Log(`Note: If you already sent funds, you may need to wait until a miner
         processes it.`);
-    Log(`Fund it, wait a bit so that it is processed and
+    Log(`Fund it, wait a bit so that it is mined and
       <a href="javascript:start()">try again</a>.`);
   }
 };
