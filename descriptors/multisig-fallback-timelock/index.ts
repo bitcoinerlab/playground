@@ -201,11 +201,11 @@ window.start = async () => {
       Log(`Signing with the FALLBACK key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@FALLBACK']! });
     } else {
-      Log(`A PSBT is now created and sent to the COSIGNER:`);
+      Log(`A PSBT is now created and passed to the COSIGNER:`);
       Log(psbt.toBase64());
-      Log(`The COSIGNER receives and signs the PSBT...`);
+      Log(`The COSIGNER signs the PSBT...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@COSIGNER']! });
-      Log(`Now, the COSIGNER sends back the signed PSBT to the USER to be
+      Log(`Now, the COSIGNER passes back the signed PSBT to the USER to be
           finalized and pushed to the network.`);
       Log(`The USER signs the PSBT with their key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@USER']! });
@@ -239,7 +239,7 @@ window.start = async () => {
     else Log(`Not yet! You still need to send some sats to ${walletAddress}.`);
     Log(`Note: If you already sent funds, you may need to wait until a miner
         processes it.`);
-    Log(`Fund the wallet, wait a bit so that it is mined and
+    Log(`Fund the wallet, wait a bit so that it is processed and
       <a href="javascript:start()">try again</a>.`);
   }
 };
