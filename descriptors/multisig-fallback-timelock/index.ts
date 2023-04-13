@@ -47,7 +47,10 @@ const JSONf = (json: object) => {
   const jsonString = JSON.stringify(json, null, ' ');
   const firstKeyI = jsonString.indexOf('{');
   const lastKeyI = jsonString.lastIndexOf('}');
-  const trimmedJsonString = jsonString.substring(firstKeyI + 3, lastKeyI);
+  const trimmedJsonString = new Option(
+    jsonString.substring(firstKeyI + 3, lastKeyI)
+  ).innerHTML;
+
   return `<code style="white-space:pre-line;overflow-wrap:break-word;">
   ${trimmedJsonString}</code>`;
 };
