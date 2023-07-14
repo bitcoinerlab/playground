@@ -1,7 +1,7 @@
 {
   "name": "playground",
   "type": "module",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "main": "index.ts",
   "scripts": {
     "descriptors/legacy2segwit": "clear && node --experimental-fetch ./descriptors/legacy2segwit/index.js",
@@ -24,6 +24,7 @@
     "ledger-bitcoin": "^0.2.2"
   },
   "devDependencies": {
+    "@types/node": "^20.4.2",
     "@typescript-eslint/eslint-plugin": "^5.53.0",
     "@typescript-eslint/parser": "^5.53.0",
     "eslint-config-prettier": "^8.6.0",
