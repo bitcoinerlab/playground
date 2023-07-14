@@ -8,6 +8,7 @@ import { Psbt, networks } from 'bitcoinjs-lib';
 import { mnemonicToSeedSync } from 'bip39';
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
+import { AppClient } from 'ledger-bitcoin';
 const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 
 const network = networks.testnet;
@@ -79,7 +80,7 @@ const start = async () => {
     return;
   }
   Log(`Ledger ready.`);
-  const ledgerClient = new descriptors.ledger.AppClient(transport);
+  const ledgerClient = new AppClient(transport);
 
   //Let's prepare the wpkh utxo:
   const wpkhDescriptor = new Descriptor({

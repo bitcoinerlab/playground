@@ -1,7 +1,7 @@
 {
   "name": "playground",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "main": "index.ts",
   "scripts": {
     "descriptors/legacy2segwit": "clear && node --experimental-fetch ./descriptors/legacy2segwit/index.js",
@@ -13,15 +13,16 @@
   },
   "author": "Jose-Luis Landabaso",
   "dependencies": {
-    "@bitcoinerlab/descriptors": "^0.2.1",
+    "@bitcoinerlab/descriptors": "^1.0.0",
     "@bitcoinerlab/miniscript": "^1.2.1",
-    "@bitcoinerlab/secp256k1": "^1.0.2",
+    "@bitcoinerlab/secp256k1": "^1.0.5",
     "@ledgerhq/hw-transport-node-hid": "^6.27.12",
     "@ledgerhq/hw-transport-webhid": "^6.27.12",
     "bip39": "^3.0.4",
     "bip65": "^1.0.3",
     "create-hash": "^1.2.0",
-    "fs": "^0.0.1-security"
+    "fs": "^0.0.1-security",
+    "ledger-bitcoin": "^0.2.2"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.53.0",
