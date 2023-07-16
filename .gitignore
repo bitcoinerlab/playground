@@ -2,6 +2,7 @@
 *.swp
 **/*.d.ts
 **/*.js
+!descriptors/codesandboxFixes.js
 .emergencyWIF
 .unvaultMnemonic
 node_modules/
