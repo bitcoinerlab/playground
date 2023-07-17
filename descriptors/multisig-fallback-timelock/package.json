@@ -1,7 +1,7 @@
 {
   "name": "playground",
   "type": "module",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "scripts": {
     "descriptors/legacy2segwit": "clear && node --experimental-fetch ./descriptors/legacy2segwit/index.js",
     "descriptors/miniscript": "clear && node --experimental-fetch ./descriptors/miniscript/index.js",
@@ -13,7 +13,7 @@
   "author": "Jose-Luis Landabaso",
   "note-on-dependecies": "@noble/hashes, create-hash and randombytes are explicitly added to address an issue in CodeSandbox where it's unable to resolve the environment correctly. CodeSandbox should be identifying a browser environment and selecting the appropriate random system functions, rather than defaulting to Node.js ones.",
   "dependencies": {
-    "@bitcoinerlab/descriptors": "^1.0.1",
+    "@bitcoinerlab/descriptors": "^1.0.2",
     "@bitcoinerlab/miniscript": "^1.2.1",
     "@bitcoinerlab/secp256k1": "^1.0.5",
     "@ledgerhq/hw-transport-node-hid": "^6.27.12",
