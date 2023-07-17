@@ -1,47 +1,42 @@
 // Copyright (c) 2023 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
 
-// Since this file is shared across multiple npm projects, it's kept in the
-// root folder and hardlinked to each one. For example, to link it to the
-// 'multisig-fallback-timelock' project, we use the following command:
-// ln descriptors/codesandboxFixes.js descriptors/multisig-fallback-timelock/codesandboxFixes.js
-
 /**
- * This script fixes an issue with a polyfill for Error.captureStackTrace,
- * specifically within the CodeSandbox environment.
+ * This script addresses an issue with CodeSandbox's polyfill for
+ * Error.captureStackTrace leading to infinite recursion when the
+ * constructorOpt argument is missing.
  *
- * Error.captureStackTrace is a V8-specific method that is not natively
- * available in all JavaScript environments. Hence, a polyfill is often used
- * in non-V8 environments like Firefox or Safari.
+ * bitcoinerlab relies on bitcoinjs-lib and typeforce, which may invoke
+ * Error.captureStackTrace without this argument, causing incompatibility
+ * issues with CodeSandbox's polyfill.
  *
- * The polyfill for Error.captureStackTrace used by CodeSandbox can cause
- * infinite recursion when the second argument (constructorOpt) is missing.
- * bitcoinerlab, which relies on bitcoinjs-lib (and in turn on typeforce),
- * may call captureStackTrace without providing this second argument.
+ * Note that the issue is not inherent to bitcoinerlab, but emerges from
+ * the interaction with CodeSandbox's polyfill. Typeforce can operate
+ * without this script in environments with a native or compliant
+ * Error.captureStackTrace, or even without it.
  *
- * It's important to clarify this is not an issue in bitcoinerlab itself,
- * but with the interaction between CodeSandbox's polyfill and how typeforce
- * utilizes Error.captureStackTrace. This script is not necessary when
- * running in a Node.js or in a browser environment where a native
- * Error.captureStackTrace or a compliant polyfill is present.
+ * The issue is resolved by wrapping the original polyfill, ensuring a
+ * defined second argument. The fix only applies when Error.captureStackTrace
+ * is polyfilled, detected by checking its string representation for
+ * the absence of '[native code]'. However, this is not foolproof.
  *
- * This script fixes the issue by wrapping the original polyfill with a function
- * that ensures the second argument is always defined.
+ * Import and run this fix prior to any other code invoking
+ * Error.captureStackTrace to ensure the fix's precedence.
  *
- * This fix is applied only when a polyfill has been used to implement
- * Error.captureStackTrace. It does so by checking the string representation
- * of Error.captureStackTrace. Native V8 implementations of the function will
- * include '[native code]' when converted to a string, while most polyfills
- * will not. This method is not foolproof as the result can be manipulated.
- *
- * Note: Import and run this fix before any other code using
- * Error.captureStackTrace to ensure it applies the fix first.
+ * The file is shared across npm projects and hardlinked to each,
+ * maintained in the root folder. For instance, to link to
+ * 'multisig-fallback-timelock', run:
+ * ln descriptors/codesandboxFixes.js descriptors/multisig-fallback-timelock/codesandboxFixes.js
  */
-if (Error.captureStackTrace.toString().indexOf('[native code]') === -1) {
-  // It appears to be a polyfill. Apply your fix.
+
+if (
+  Error.captureStackTrace &&
+  Error.captureStackTrace.toString().indexOf('[native code]') === -1
+) {
+  // It appears to be a polyfill. Apply the fix.
   const originalPolyfill = Error.captureStackTrace;
   Error.captureStackTrace = function (targetObject, constructorOpt) {
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    // eslint-disable-next-line
     constructorOpt = constructorOpt || (() => {});
     originalPolyfill.call(this, targetObject, constructorOpt);
   };
