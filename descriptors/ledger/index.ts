@@ -186,7 +186,9 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
       Log(`<a href="javascript:start();">Try again in a few blocks!</a>`);
     } else {
       const txId = spendTx.getId();
-      Log(`Success. <a href="${EXPLORER}/tx/${txId}?expand">Check it!</a>`);
+      Log(
+        `Success. <a href="${EXPLORER}/tx/${txId}?expand" target="_blank">Check it!</a>`
+      );
     }
   } else {
     Log(`Not yet! Use https://bitcoinfaucet.uo1.net to get some sats:`);
