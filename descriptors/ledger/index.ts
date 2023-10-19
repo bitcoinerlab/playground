@@ -80,7 +80,7 @@ const start = async () => {
 <a href="javascript:start();">try again</a>.`);
     return;
   }
-  Log(`Ledger ready.`);
+  Log(`Ledger ready. Now look at the device screen...`);
   const ledgerClient = new AppClient(transport);
   const ledgerManager = { ledgerClient, ledgerState, ecc, network };
 
