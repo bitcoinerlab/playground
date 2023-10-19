@@ -40,7 +40,7 @@ import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
 import { encode as olderEncode } from 'bip68';
 const signers = descriptors.signers;
 
-const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
+const { Output, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 const FAUCET = 'https://bitcoinfaucet.uo1.net';
 
 //JSON to pretty-string format:
@@ -157,8 +157,8 @@ const isolatedMiniscript = miniscript.replace(
   /(@\w+)/g,
   (match, key) => keyExpressions[key] || match
 );
-const descriptorExpression = `wsh(${isolatedMiniscript})`;
-Log(`Descriptor: <code>${descriptorExpression}</code>`);
+const descriptor = `wsh(${isolatedMiniscript})`;
+Log(`Descriptor: <code>${descriptor}</code>`);
 let signersPubKeys;
 const behaviourMsg = `Change this behavior by editing the
   <code>FALLBACK_RECOVERY</code> setting.`;
@@ -171,12 +171,12 @@ if (FALLBACK_RECOVERY) {
       COSIGNER</b>. ${behaviourMsg}`);
   signersPubKeys = [pubKeys['@COSIGNER'], pubKeys['@USER']];
 }
-const descriptor = new Descriptor({
-  expression: descriptorExpression,
+const output = new Output({
+  descriptor,
   network,
   signersPubKeys: signersPubKeys as Buffer[]
 });
-const walletAddress = descriptor.getAddress();
+const walletAddress = output.getAddress();
 Log(`Wallet address: ${walletAddress}`);
 window.start = async () => {
   const currentBlockHeight = parseInt(
@@ -196,11 +196,19 @@ window.start = async () => {
     ).text();
     const inputValue = utxo[0].value;
     const psbt = new Psbt({ network });
-    descriptor.updatePsbt({ psbt, txHex, vout: utxo[0].vout });
+    const inputFinalizer = output.updatePsbtAsInput({
+      psbt,
+      txHex,
+      vout: utxo[0].vout
+    });
     //For the purpose of this guide, we add an output to send funds to hardcoded
     //addresses, which we don't care about, just to show how to use the API.
     //Don't forget to account for transaction fees!
-    psbt.addOutput({ address: FINAL_ADDRESS, value: inputValue - FEE });
+    new Output({
+      descriptor: `addr(${FINAL_ADDRESS})`,
+      network
+    }).updatePsbtAsOutput({ psbt, value: inputValue - FEE });
+    //Above equivalent: psbt.addOutput({ address: FINAL_ADDRESS, value: inputValue - FEE });
     if (FALLBACK_RECOVERY) {
       Log(`Signing with the FALLBACK key...`);
       signers.signBIP32({ psbt, masterNode: masterNodes['@FALLBACK']! });
@@ -216,7 +224,7 @@ window.start = async () => {
     }
     //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
     Log(`Finalizing the tx (adding the witness) & pushing the transaction...`);
-    descriptor.finalizePsbtInput({ index: 0, psbt });
+    inputFinalizer({ psbt });
     const spendTx = psbt.extractTransaction();
     const spendTxPushResult = await (
       await fetch(`${EXPLORER}/api/tx`, {

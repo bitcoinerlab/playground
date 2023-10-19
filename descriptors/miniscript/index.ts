@@ -12,7 +12,7 @@ import { encode as afterEncode } from 'bip65';
 import { readFileSync, writeFileSync } from 'fs';
 import type { ECPairInterface } from 'ecpair';
 
-const { Descriptor, BIP32, ECPair } = descriptors.DescriptorsFactory(secp256k1);
+const { Output, BIP32, ECPair } = descriptors.DescriptorsFactory(secp256k1);
 
 const network = networks.testnet;
 const EXPLORER = 'https://blockstream.info/testnet';
@@ -84,7 +84,7 @@ const start = async () => {
   const unvaultKey = unvaultMasterNode.derivePath(
     `m${WSH_ORIGIN_PATH}${WSH_KEY_PATH}`
   ).publicKey;
-  const wshExpression = `wsh(${miniscript
+  const wshDescriptor = `wsh(${miniscript
     .replace(
       '@unvaultKey',
       descriptors.keyExpressionBIP32({
@@ -94,12 +94,12 @@ const start = async () => {
       })
     )
     .replace('@emergencyKey', emergencyPair.publicKey.toString('hex'))})`;
-  const wshDescriptor = new Descriptor({
-    expression: wshExpression,
+  const wshOutput = new Output({
+    descriptor: wshDescriptor,
     network,
     signersPubKeys: [EMERGENCY_RECOVERY ? emergencyPair.publicKey : unvaultKey]
   });
-  const wshAddress = wshDescriptor.getAddress();
+  const wshAddress = wshOutput.getAddress();
   Log(`Fund your vault. Let's first check if it's been already funded...`);
   const utxo = await (
     await fetch(`${EXPLORER}/api/address/${wshAddress}/utxo`)
@@ -111,23 +111,36 @@ const start = async () => {
     ).text();
     const inputValue = utxo[0].value;
     const psbt = new Psbt({ network });
-    wshDescriptor.updatePsbt({ psbt, txHex, vout: utxo[0].vout });
+    const inputFinalizer = wshOutput.updatePsbtAsInput({
+      psbt,
+      txHex,
+      vout: utxo[0].vout
+    });
     //For the purpose of this guide, we add an output to send funds to hardcoded
     //addresses, which we don't care about, just to show how to use the API. Don't
     //forget to account for transaction fees!
-    psbt.addOutput({
-      address: EMERGENCY_RECOVERY
-        ? 'mkpZhYtJu2r87Js3pDiWJDmPte2NRZ8bJV'
-        : 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge',
-      value: inputValue - 1000
-    });
+    new Output({
+      descriptor: `addr(${
+        EMERGENCY_RECOVERY
+          ? 'mkpZhYtJu2r87Js3pDiWJDmPte2NRZ8bJV'
+          : 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge'
+      })`,
+      network
+    }).updatePsbtAsOutput({ psbt, value: inputValue - 1000 });
+    //This is equivalent to the above:
+    //psbt.addOutput({
+    //  address: EMERGENCY_RECOVERY
+    //    ? 'mkpZhYtJu2r87Js3pDiWJDmPte2NRZ8bJV'
+    //    : 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge',
+    //  value: inputValue - 1000
+    //});
 
     //Now sign the PSBT with the BIP32 node (the software wallet)
     if (EMERGENCY_RECOVERY)
       descriptors.signers.signECPair({ psbt, ecpair: emergencyPair });
     else descriptors.signers.signBIP32({ psbt, masterNode: unvaultMasterNode });
     //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
-    wshDescriptor.finalizePsbtInput({ index: 0, psbt });
+    inputFinalizer({ psbt });
     const spendTx = psbt.extractTransaction();
     const spendTxPushResult = await (
       await fetch(`${EXPLORER}/api/tx`, {
