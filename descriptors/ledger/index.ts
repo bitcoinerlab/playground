@@ -2,7 +2,7 @@
 // Distributed under the MIT software license
 
 import './codesandboxFixes.js';
-import * as secp256k1 from '@bitcoinerlab/secp256k1';
+import * as ecc from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
 import { Psbt, networks } from 'bitcoinjs-lib';
@@ -10,7 +10,7 @@ import { mnemonicToSeedSync } from 'bip39';
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
 import { AppClient } from 'ledger-bitcoin';
-const { Descriptor, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
+const { Output, BIP32 } = descriptors.DescriptorsFactory(ecc);
 
 const network = networks.testnet;
 const EXPLORER = 'https://blockstream.info/testnet';
@@ -82,27 +82,25 @@ const start = async () => {
   }
   Log(`Ledger ready.`);
   const ledgerClient = new AppClient(transport);
+  const ledgerManager = { ledgerClient, ledgerState, ecc, network };
 
   //Let's prepare the wpkh utxo:
-  const wpkhDescriptor = new Descriptor({
-    expression: await descriptors.scriptExpressions.wpkhLedger({
-      ledgerClient,
-      ledgerState,
-      network,
+  const wpkhOutput = new Output({
+    descriptor: await descriptors.scriptExpressions.wpkhLedger({
+      ledgerManager,
       account: 0,
       change: 0,
       index: 0
     }),
     network
   });
-  const wpkhAddress = wpkhDescriptor.getAddress();
+  const wpkhAddress = wpkhOutput.getAddress();
 
   //Now let's prepare the wsh utxo:
   const { miniscript, issane } = compilePolicy(POLICY);
   if (!issane) throw new Error(`Error: miniscript not sane`);
   const ledgerKeyExpression = await descriptors.keyExpressionLedger({
-    ledgerClient,
-    ledgerState,
+    ledgerManager,
     originPath: WSH_ORIGIN_PATH,
     keyPath: WSH_KEY_PATH
   });
@@ -111,19 +109,19 @@ const start = async () => {
     originPath: WSH_ORIGIN_PATH,
     keyPath: WSH_KEY_PATH
   });
-  const wshExpression = `wsh(${miniscript
+  const wshDescriptor = `wsh(${miniscript
     .replace('@ledger', ledgerKeyExpression)
     .replace('@soft', softKeyExpression)})`;
-  const wshDescriptor = new Descriptor({
-    expression: wshExpression,
+  const wshOutput = new Output({
+    descriptor: wshDescriptor,
     network,
     preimages: [{ digest: `sha256(${DIGEST})`, preimage: PREIMAGE }]
   });
-  const wshAddress = wshDescriptor.getAddress();
+  const wshAddress = wshOutput.getAddress();
 
   //Now, spend both wpkh and wsh utxos:
   const psbt = new Psbt({ network });
-  const psbtInputDescriptors = [];
+  const psbtInputFinalizers = [];
   Log(`Fund the utxos. Let's first check if they're already funded...`);
   const wpkhUtxo = await (
     await fetch(`${EXPLORER}/api/address/${wpkhAddress}/utxo`)
@@ -138,20 +136,20 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
       await fetch(`${EXPLORER}/api/tx/${wpkhUtxo?.[0].txid}/hex`)
     ).text();
     let inputValue = wpkhUtxo[0].value;
-    let i = wpkhDescriptor.updatePsbt({ psbt, txHex, vout: wpkhUtxo[0].vout });
-    psbtInputDescriptors[i] = wpkhDescriptor;
+    psbtInputFinalizers.push(
+      wpkhOutput.updatePsbtAsInput({ psbt, txHex, vout: wpkhUtxo[0].vout })
+    );
     txHex = await (
       await fetch(`${EXPLORER}/api/tx/${wshUtxo?.[0].txid}/hex`)
     ).text();
     inputValue += wshUtxo[0].value;
-    i = wshDescriptor.updatePsbt({ psbt, txHex, vout: wshUtxo[0].vout });
-    psbtInputDescriptors[i] = wshDescriptor;
+    psbtInputFinalizers.push(
+      wshOutput.updatePsbtAsInput({ psbt, txHex, vout: wshUtxo[0].vout })
+    );
     //We'll send the funds to one of our Ledger's internal (change) addresses:
-    const finalAddress = new Descriptor({
-      expression: await descriptors.scriptExpressions.wpkhLedger({
-        ledgerClient,
-        ledgerState,
-        network,
+    const finalAddress = new Output({
+      descriptor: await descriptors.scriptExpressions.wpkhLedger({
+        ledgerManager,
         account: 0,
         change: 1,
         index: 0
@@ -163,22 +161,16 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
 
     //Register Ledger policies of non-standard descriptors. Auto-skips if exists
     await descriptors.ledger.registerLedgerWallet({
-      ledgerClient,
-      ledgerState,
+      ledgerManager,
       descriptor: wshDescriptor,
       policyName: 'BitcoinerLab'
     });
     //We can sign the tx with the Ledger.
-    await descriptors.signers.signLedger({
-      ledgerClient,
-      ledgerState,
-      psbt,
-      descriptors: psbtInputDescriptors
-    });
+    await descriptors.signers.signLedger({ ledgerManager, psbt });
     //Now sign the PSBT with the BIP32 node (the software wallet)
     descriptors.signers.signBIP32({ psbt, masterNode });
     //Finalize the tx (compute & add the scriptWitness) & push to the blockchain
-    descriptors.finalizePsbt({ psbt, descriptors: psbtInputDescriptors });
+    psbtInputFinalizers.forEach(inputFinalizer => inputFinalizer({ psbt }));
     const spendTx = psbt.extractTransaction();
     const spendTxPushResult = await (
       await fetch(`${EXPLORER}/api/tx`, {
