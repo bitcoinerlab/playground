@@ -5,6 +5,7 @@
 !descriptors/**/codesandboxFixes.js
 .emergencyWIF
 .unvaultMnemonic
+.p2amnemonic
 node_modules/
 docs/
 dist/
