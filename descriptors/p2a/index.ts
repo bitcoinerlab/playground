@@ -88,11 +88,13 @@ Please wait a few seconds before requesting again (max 2 faucet requests per IP/
     // Ping the esplora server until the tx is indexed
     try {
       faucetTxHex = await explorer.fetchTx(faucetTxId);
+      break;
     } catch (err) {
+      Log(`
+⏳ Waiting for the faucet transaction to be indexed...`);
       void err;
     }
     await new Promise(r => setTimeout(r, 1000)); //sleep 1s
-    break;
   }
 
   let attempt = 0;
