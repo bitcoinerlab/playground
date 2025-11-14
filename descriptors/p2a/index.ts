@@ -47,25 +47,25 @@ if (isWeb) {
     writeFileSync('.p2amnemonic', mnemonic);
   }
 }
-
 const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
-const sourceOutput = new Output({
-  descriptor: wpkhBIP32({
-    masterNode,
-    network,
-    account: 0,
-    keyPath: '/0/0'
-  }),
-  network
-});
-const sourceAddress = sourceOutput.getAddress();
 
-const formData = new URLSearchParams();
-formData.append('address', sourceAddress);
-// Ask the faucet to mine this transaction. The TAPE testnet allows this,
-// but with limits to prevent abuse. Mining is not guaranteed.
-formData.append('forceConfirm', 'true');
 const start = async () => {
+  const sourceOutput = new Output({
+    descriptor: wpkhBIP32({
+      masterNode,
+      network,
+      account: 0,
+      keyPath: '/0/0'
+    }),
+    network
+  });
+  const sourceAddress = sourceOutput.getAddress();
+
+  const formData = new URLSearchParams();
+  formData.append('address', sourceAddress);
+  // Ask the faucet to mine this transaction. The TAPE testnet allows this,
+  // but with limits to prevent abuse. Mining is not guaranteed.
+  formData.append('forceConfirm', 'true');
   const faucetRes = await fetch(FAUCET_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -84,21 +84,20 @@ Please wait a few seconds before requesting again (max 2 faucet requests per IP/
     );
   const faucetTxId = faucetJson.txId;
   let faucetTxHex = '';
-  for (;;) {
+  for (; ;) {
     // Ping the esplora server until the tx is indexed
     try {
       faucetTxHex = await explorer.fetchTx(faucetTxId);
       break;
     } catch (err) {
-      Log(`
-⏳ Waiting for the faucet transaction to be indexed...`);
+      Log(`⏳ Waiting for the faucet transaction to be indexed...`);
       void err;
     }
     await new Promise(r => setTimeout(r, 1000)); //sleep 1s
   }
 
   let attempt = 0;
-  for (;;) {
+  for (; ;) {
     // Wait until the funding tx is in a block
     try {
       const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
@@ -113,8 +112,7 @@ Please wait a few seconds before requesting again (max 2 faucet requests per IP/
 
       // Not confirmed yet
       if (attempt === 0) {
-        Log(`
-⏳ Waiting for the faucet transaction to be confirmed...
+        Log(`⏳ Waiting for the faucet transaction to be confirmed...
 
    TRUC + P2A rules require the funding transaction to be in a block.
    This may take a few minutes.
