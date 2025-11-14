@@ -24,9 +24,16 @@
  * Error.captureStackTrace to ensure the fix's precedence.
  *
  * The file is shared across npm projects and hardlinked to each,
- * maintained in the root folder. For instance, to link to
- * 'multisig-fallback-timelock', run:
+ * maintained in the root folder:
+ *
+ * rm descriptors/ledger/codesandboxFixes.js descriptors/legacy2segwit/codesandboxFixes.js descriptors/luna/codesandboxFixes.js descriptors/miniscript/codesandboxFixes.js descriptors/multisig-fallback-timelock/codesandboxFixes.js descriptors/p2a/codesandboxFixes.js
+ *
+ * ln descriptors/codesandboxFixes.js descriptors/ledger/codesandboxFixes.js
+ * ln descriptors/codesandboxFixes.js descriptors/legacy2segwit/codesandboxFixes.js
+ * ln descriptors/codesandboxFixes.js descriptors/luna/codesandboxFixes.js
+ * ln descriptors/codesandboxFixes.js descriptors/miniscript/codesandboxFixes.js
  * ln descriptors/codesandboxFixes.js descriptors/multisig-fallback-timelock/codesandboxFixes.js
+ * ln descriptors/codesandboxFixes.js descriptors/p2a/codesandboxFixes.js
  */
 
 if (
