@@ -134,12 +134,14 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     // Wait until the funding tx is in a block
     try {
       if (firstAttempt === true)
-        Log(`⏳ Waiting for the funding tx <a href="${EXPLORER}/${fundingtTxId}" target="_blank">${fundingtTxId}</a> to be confirmed...
+        Log(`
 
-   TRUC + P2A rules require the funding transaction to be in a block.
+⛓️ TRUC + P2A rules require the funding transaction to be included in a block.
    This may take a few minutes.
 
-`);
+⏳ Waiting for the funding tx 
+   <a href="${EXPLORER}/${fundingtTxId}" target="_blank">${fundingtTxId}</a>
+   to be confirmed...`);
       const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
       // Confirmed?
       if (
