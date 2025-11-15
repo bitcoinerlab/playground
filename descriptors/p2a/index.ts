@@ -29,29 +29,28 @@ const network = networks.regtest;
 const FEE = 500;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 
-let mnemonic; //Let's create a basic wallet:
-if (isWeb) {
-  mnemonic = localStorage.getItem('p2amnemonic');
-  if (!mnemonic) {
-    mnemonic = generateMnemonic();
-    localStorage.setItem('p2amnemonic', mnemonic);
+const start = async () => {
+  let mnemonic; //Let's create a basic wallet:
+  if (isWeb) {
+    mnemonic = localStorage.getItem('p2amnemonic');
+    if (!mnemonic) {
+      mnemonic = generateMnemonic();
+      localStorage.setItem('p2amnemonic', mnemonic);
+    }
+  } else {
+    try {
+      mnemonic = readFileSync('.p2amnemonic', 'utf8');
+    } catch {
+      mnemonic = generateMnemonic();
+      writeFileSync('.p2amnemonic', mnemonic);
+    }
   }
-} else {
-  try {
-    mnemonic = readFileSync('.p2amnemonic', 'utf8');
-  } catch {
-    mnemonic = generateMnemonic();
-    writeFileSync('.p2amnemonic', mnemonic);
-  }
-}
-Log(`🔐 This is your demo wallet (mnemonic):
+  Log(`🔐 This is your demo wallet (mnemonic):
 ${mnemonic}
 
 ⚠️ Save it only if you want. This is the TAPE testnet. 
 Every reload reuses the same mnemonic for convenience.`);
-const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
-
-const start = async () => {
+  const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
   const sourceOutput = new Output({
     descriptor: wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/0' }),
     network
