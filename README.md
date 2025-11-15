@@ -14,7 +14,7 @@ All the guides provide thorough explanations of how the code works.
 
 ## Running Locally
 
-If you prefer to run the code locally, clone and run the [BitcoinerLab Playground repository](https://github.com/bitcoinerlab/playground) in your local machine.
+If you prefer to run the code locally, clone and run the [BitcoinerLab Playground repository](https://github.com/bitcoinerlab/playground) on your local machine.
 
 For example:
 
@@ -22,14 +22,69 @@ For example:
 git clone https://github.com/bitcoinerlab/playground.git
 cd playground
 npm install
-npm run build
 npm run descriptors/legacy2segwit
 ```
 
 This will execute the code in `./descriptors/legacy2segwit/index.ts` and output the results.
 
-The following guides are available:
+## Available Playgrounds
 
-- `descriptors/legacy2segwit`: Learn how to use the @bitcoinerlab set of libraries to program standard transactions.
-- `descriptors/miniscript`: Learn how to use the @bitcoinerlab set of libraries to create a Timelocked Vault with an emergency escape path.
-- `descriptors/ledger`: Learn how to use @bitcoinerlab to create transactions and sign them with Ledger devices
+Below is the full list of playgrounds included in this repository, with links to their corresponding guides on the BitcoinerLab site.
+
+### `descriptors/legacy2segwit`
+
+**Guide**: [https://bitcoinerlab.com/guides/standard-transactions](https://bitcoinerlab.com/guides/standard-transactions)
+
+Learn how to build standard Bitcoin transactions and migrate funds from Legacy to SegWit addresses using BitcoinerLab libraries.
+
+```bash
+npm run descriptors/legacy2segwit
+```
+
+### `descriptors/miniscript`
+
+**Guide**: [https://bitcoinerlab.com/guides/miniscript-vault](https://bitcoinerlab.com/guides/miniscript-vault)
+
+Learn how to build a vault using Miniscript with a timelock and an emergency escape path.
+Learn how Miniscript descriptors work and how to build and compile policies.
+
+```bash
+npm run descriptors/miniscript
+```
+
+### `descriptors/ledger`
+
+**Guide**: [https://bitcoinerlab.com/guides/ledger-programming](https://bitcoinerlab.com/guides/ledger-programming)
+
+Learn how to sign transactions with Ledger hardware devices using BitcoinerLab Ledger helpers.
+Covers transport selection (WebHID / NodeHID), derivation policies and multi-input signing flows.
+
+```bash
+npm run descriptors/ledger
+```
+
+### `descriptors/p2a`
+
+**Guide**: [https://bitcoinerlab.com/guides/p2a](https://bitcoinerlab.com/guides/p2a)
+
+Learn how to construct a **P2A (Pay-to-Anchor)** output and how these outputs are used as the anchor for **TRUC fee-bumping transactions**.
+
+```bash
+npm run descriptors/p2a
+```
+
+### `descriptors/multisig-fallback-timelock`
+
+**Guide**: [https://bitcoinerlab.com/guides/multisig-fallback-timelock](https://bitcoinerlab.com/guides/multisig-fallback-timelock)
+
+Create a multisig with a time-delayed fallback path using Miniscript.
+Useful for inheritance, recovery-wallet setups and collaborative custody.
+
+```bash
+npm run descriptors/multisig-fallback-timelock
+```
+
+## License
+
+MIT License
+(c) 2025 Jose-Luis Landabaso — [https://bitcoinerlab.com](https://bitcoinerlab.com)

@@ -100,9 +100,18 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     fundingtTxId = faucetJson.txId;
   } else {
     Log(`💰 Existing balance detected. Skipping faucet.`);
-    //Wallet with funds. We'll assume last tx is the one that received some sats,
+    // Wallet has funds. Find the last transaction that actually pays to this script.
     const txHistory = await explorer.fetchTxHistory({ address: sourceAddress });
-    fundingtTxId = txHistory[txHistory.length - 1]?.txId;
+    const spkHex = sourceOutput.getScriptPubKey().toString('hex');
+
+    for (const { txId } of txHistory.reverse()) {
+      const tx = Transaction.fromHex(await explorer.fetchTx(txId));
+      const vout = tx.outs.findIndex(o => o.script.toString('hex') === spkHex);
+      if (vout !== -1) {
+        fundingtTxId = txId;
+        break;
+      }
+    }
   }
 
   let fundingTxHex = '';

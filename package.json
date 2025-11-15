@@ -1,13 +1,13 @@
 {
   "name": "playground",
   "type": "module",
-  "version": "2.2.10",
+  "version": "2.2.11",
   "scripts": {
-    "descriptors/legacy2segwit": "clear && node --experimental-fetch ./descriptors/legacy2segwit/index.js",
-    "descriptors/miniscript": "clear && node --experimental-fetch ./descriptors/miniscript/index.js",
-    "descriptors/ledger": "clear && node --experimental-fetch ./descriptors/ledger/index.js",
-    "descriptors/luna": "clear && node --experimental-fetch ./descriptors/luna/index.js",
-    "descriptors/p2a": "clear && node --experimental-fetch ./descriptors/p2a/index.js",
+    "descriptors/legacy2segwit": "tsx ./descriptors/legacy2segwit/index.ts",
+    "descriptors/miniscript": "tsx ./descriptors/miniscript/index.ts",
+    "descriptors/ledger": "tsx ./descriptors/ledger/index.ts",
+    "descriptors/luna": "tsx ./descriptors/luna/index.ts",
+    "descriptors/p2a": "tsx ./descriptors/p2a/index.ts",
     "build": "npx tsc",
     "lint": "eslint . --ext .ts --ignore-pattern '**/*.d.ts'"
   },
@@ -58,6 +58,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }
 }
