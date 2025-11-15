@@ -20,7 +20,7 @@ const Log = (message: string) => {
 //JSON to pretty-string format:
 const JSONf = (json: object) => JSON.stringify(json, null, '\t');
 
-const EXPLORER = `https://tape.rewindbitcoin.com`;
+const EXPLORER = `https://tape.rewindbitcoin.com/explorer`;
 const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
 const explorer = new EsploraExplorer({ url: ESPLORA_API });
@@ -119,7 +119,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     // Wait until the funding tx is in a block
     try {
       if (firstAttempt === true)
-        Log(`⏳ Waiting for the funding tx ${fundingtTxId} to be confirmed...
+        Log(`⏳ Waiting for the funding tx <a href="${EXPLORER}/${fundingtTxId}" target="_blank">${fundingtTxId}</a> to be confirmed...
 
    TRUC + P2A rules require the funding transaction to be in a block.
    This may take a few minutes.
@@ -203,10 +203,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   childInputFinalizer({ psbt: childPsbt });
 
   const childTransaction = childPsbt.extractTransaction();
-  Log(
-    `🧑‍🍼 Parent tx (yes, the one with *zero fees*): <a href="${EXPLORER}/${parentTransaction.getId()}" target="_blank">${parentTransaction.getId()}</a>
-Child tx: <a href="${EXPLORER}/${childTransaction.getId()}" target="_blank">${childTransaction.getId()}</a>`
-  );
 
   const pkgUrl = `${ESPLORA_API}/txs/package`;
   const pkgRes = await fetch(pkgUrl, {
@@ -226,10 +222,10 @@ Child tx: <a href="${EXPLORER}/${childTransaction.getId()}" target="_blank">${ch
 
   const pkgRespJson = await pkgRes.json();
   Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
-
-  const destInfo = await explorer.fetchAddress(destAddress);
-
-  Log(`🔍 Destination info: ${JSONf(destInfo)}`);
+  Log(
+    `🧑‍🍼 Parent tx (yes, the one with *zero fees*): <a href="${EXPLORER}/${parentTransaction.getId()}" target="_blank">${parentTransaction.getId()}</a>
+👶 Child tx: <a href="${EXPLORER}/${childTransaction.getId()}" target="_blank">${childTransaction.getId()}</a>`
+  );
 };
 if (isWeb) (window as unknown as { start: typeof start }).start = start;
 
