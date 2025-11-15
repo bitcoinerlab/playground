@@ -1,7 +1,7 @@
 // Copyright (c) 2023 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
 
-import './codesandboxFixes.js';
+import './codesandboxFixes';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
@@ -166,7 +166,7 @@ const start = async () => {
     Log(`${wshAddress} Fund it & <a href="javascript:start()">check again</a>`);
   }
 };
-if (isWeb) (window as any).start = start;
+if (isWeb) (window as unknown as { start: typeof start }).start = start;
 
 if (isWeb) {
   document.body.innerHTML = `<div id="logs">

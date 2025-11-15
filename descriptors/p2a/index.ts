@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
 
-import './codesandboxFixes.js';
+import './codesandboxFixes';
 
 import { readFileSync, writeFileSync } from 'fs';
 import * as descriptors from '@bitcoinerlab/descriptors';
@@ -84,7 +84,7 @@ Please wait a few seconds before requesting again (max 2 faucet requests per IP/
     );
   const faucetTxId = faucetJson.txId;
   let faucetTxHex = '';
-  for (; ;) {
+  for (;;) {
     // Ping the esplora server until the tx is indexed
     try {
       faucetTxHex = await explorer.fetchTx(faucetTxId);
@@ -97,7 +97,7 @@ Please wait a few seconds before requesting again (max 2 faucet requests per IP/
   }
 
   let attempt = 0;
-  for (; ;) {
+  for (;;) {
     // Wait until the funding tx is in a block
     try {
       const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);

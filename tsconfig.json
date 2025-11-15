@@ -19,7 +19,7 @@
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "importsNotUsedAsValues": "error",
+    "verbatimModuleSyntax": true,
     "checkJs": true,
     // Everything below are custom changes for this app
     "allowJs": true
