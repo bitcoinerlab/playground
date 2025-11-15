@@ -1,8 +1,6 @@
 // Copyright (c) 2025 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
-
 import './codesandboxFixes';
-
 import { readFileSync, writeFileSync } from 'fs';
 import * as descriptors from '@bitcoinerlab/descriptors';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
@@ -29,10 +27,9 @@ const { wpkhBIP32 } = descriptors.scriptExpressions;
 const { Output, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 const network = networks.regtest;
 const FEE = 500;
-const ANCHOR_VALUE = 0;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 
-let mnemonic;
+let mnemonic; //Let's create a basic wallet:
 if (isWeb) {
   mnemonic = localStorage.getItem('p2amnemonic');
   if (!mnemonic) {
@@ -47,61 +44,84 @@ if (isWeb) {
     writeFileSync('.p2amnemonic', mnemonic);
   }
 }
+Log(`🔐 This is your demo wallet (mnemonic):
+${mnemonic}
+
+⚠️ Save it only if you want. This is the TAPE testnet. 
+Every reload reuses the same mnemonic for convenience.`);
 const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
 
 const start = async () => {
   const sourceOutput = new Output({
-    descriptor: wpkhBIP32({
-      masterNode,
-      network,
-      account: 0,
-      keyPath: '/0/0'
-    }),
+    descriptor: wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/0' }),
     network
   });
   const sourceAddress = sourceOutput.getAddress();
+  Log(`📫 Source address: ${sourceAddress}`);
 
-  const formData = new URLSearchParams();
-  formData.append('address', sourceAddress);
-  // Ask the faucet to mine this transaction. The TAPE testnet allows this,
-  // but with limits to prevent abuse. Mining is not guaranteed.
-  formData.append('forceConfirm', 'true');
-  const faucetRes = await fetch(FAUCET_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: formData.toString()
-  });
+  // Check if the wallet already has confirmed funds
+  Log(`🔍 Checking existing balance...`);
+  const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
+  let fundingtTxId;
+  if (
+    sourceAddressInfo.unconfirmedBalance === 0 &&
+    sourceAddressInfo.balance === 0
+  ) {
+    //New or empty wallet. Let's prepare the faucet request:
+    const formData = new URLSearchParams();
+    formData.append('address', sourceAddress);
+    //Ask the faucet to forceConfirm this transaction. The TAPE testnet allows
+    //mining after the request but with limits it to prevent abuse. Not guaranteed.
+    formData.append('forceConfirm', 'true');
+    const faucetRes = await fetch(FAUCET_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formData.toString()
+    });
 
-  if (faucetRes.status !== 200) throw new Error('The faucet failed');
-  const faucetJson = await faucetRes.json();
-  Log(`🪣 Faucet response: ${JSONf(faucetJson)}`);
+    if (faucetRes.status !== 200) throw new Error('The faucet failed');
+    const faucetJson = await faucetRes.json();
+    Log(`🪣 Faucet response: ${JSONf(faucetJson)}`);
 
-  if (faucetJson.ok !== true) throw new Error('The faucet failed');
-  if (faucetJson.info === 'CACHED')
-    throw new Error(
-      `Faucet rate-limit: this address has already received sats recently.
-Please wait a few seconds before requesting again (max 2 faucet requests per IP/address per minute).`
-    );
-  const faucetTxId = faucetJson.txId;
-  let faucetTxHex = '';
+    if (faucetJson.ok !== true) throw new Error('The faucet failed');
+    if (faucetJson.info === 'CACHED')
+      throw new Error(
+        `Faucet rate-limit: this address has already received sats recently.
+Please retry (max 2 faucet requests per IP/address per minute).`
+      );
+    fundingtTxId = faucetJson.txId;
+  } else {
+    Log(`💰 Existing balance detected. Skipping faucet.`);
+    //Wallet with funds. We'll assume last tx is the one that received some sats,
+    const txHistory = await explorer.fetchTxHistory({ address: sourceAddress });
+    fundingtTxId = txHistory[txHistory.length - 1]?.txId;
+  }
+
+  let fundingTxHex = '';
   for (;;) {
-    // Ping the esplora server until the tx is indexed
+    // Ping the esplora for the txHex (may need to wait until the tx is indexed)
     try {
-      faucetTxHex = await explorer.fetchTx(faucetTxId);
+      fundingTxHex = await explorer.fetchTx(fundingtTxId);
       break;
     } catch (err) {
-      Log(`⏳ Waiting for the faucet transaction to be indexed...`);
       void err;
+      Log(`⏳ Waiting for the faucet transaction to be indexed...`);
     }
     await new Promise(r => setTimeout(r, 1000)); //sleep 1s
   }
 
-  let attempt = 0;
+  let firstAttempt = true;
   for (;;) {
     // Wait until the funding tx is in a block
     try {
-      const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
+      if (firstAttempt === true)
+        Log(`⏳ Waiting for the funding transaction to be confirmed...
 
+   TRUC + P2A rules require the funding transaction to be in a block.
+   This may take a few minutes.
+
+`);
+      const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
       // Confirmed?
       if (sourceAddressInfo.unconfirmedTxCount === 0) {
         Log(
@@ -109,65 +129,41 @@ Please wait a few seconds before requesting again (max 2 faucet requests per IP/
         );
         break;
       }
-
       // Not confirmed yet
-      if (attempt === 0) {
-        Log(`⏳ Waiting for the faucet transaction to be confirmed...
-
-   TRUC + P2A rules require the funding transaction to be in a block.
-   This may take a few minutes.
-
-`);
-      } else {
-        const dots = '.'.repeat((attempt % 5) + 1);
-        Log(`⏳ Still waiting for confirmation${dots}`);
-      }
+      Log(`⏳ Still waiting for confirmation...`);
     } catch (err) {
-      if (attempt === 0) {
-        Log(
-          `🔍 Funding transaction not visible yet. Waiting for explorer to index it...: ${err}`
-        );
-      } else {
-        const dots = '.'.repeat((attempt % 5) + 1);
-        Log(`🔍 Explorer hasn't indexed the tx yet${dots}`);
-      }
+      Log(`⏳ Something went wrong while waiting for confirmation: ${err}`);
     }
-
-    await new Promise(r => setTimeout(r, attempt === 0 ? 5000 : 10000)); //sleep 5/10s
-    attempt++;
+    await new Promise(r => setTimeout(r, firstAttempt ? 5000 : 10000)); //sleep 5/10s
+    firstAttempt = false;
   }
 
-  const faucetTransaction = Transaction.fromHex(faucetTxHex);
-  const faucetVout = faucetTransaction.outs.findIndex(
+  const fundingTransaction = Transaction.fromHex(fundingTxHex);
+  const fundingVout = fundingTransaction.outs.findIndex(
     txOut =>
       txOut.script.toString('hex') ===
       sourceOutput.getScriptPubKey().toString('hex')
   );
-  if (faucetVout < 0) throw new Error('Matching sourceOutput not found');
+  if (!fundingTransaction.outs[fundingVout]) throw new Error('Invalid vout');
 
-  const sourceValue = faucetTransaction.outs[faucetVout]!.value;
+  const sourceValue = fundingTransaction.outs[fundingVout].value;
   Log(`💎 Initial value (sats): ${sourceValue}`);
   // Create destination address (account 1)
   const destOutput = new Output({
-    descriptor: wpkhBIP32({
-      masterNode,
-      network,
-      account: 1,
-      keyPath: '/0/0'
-    }),
+    descriptor: wpkhBIP32({ masterNode, network, account: 1, keyPath: '/0/0' }),
     network
   });
   const destAddress = destOutput.getAddress();
-  const destValue = sourceValue - ANCHOR_VALUE; // no fee!!
+  const destValue = sourceValue; // Look ma! no fee!!
 
   const parentPsbt = new Psbt({ network });
   parentPsbt.setVersion(3);
   const parentInputFinalizer = sourceOutput.updatePsbtAsInput({
     psbt: parentPsbt,
-    vout: faucetVout,
-    txHex: faucetTxHex
+    vout: fundingVout,
+    txHex: fundingTxHex
   });
-  parentPsbt.addOutput({ script: P2A_SCRIPT, value: ANCHOR_VALUE }); //vout: 0
+  parentPsbt.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
   destOutput.updatePsbtAsOutput({ psbt: parentPsbt, value: destValue }); //vout: 1
 
   descriptors.signers.signBIP32({ psbt: parentPsbt, masterNode });
@@ -181,7 +177,7 @@ Please wait a few seconds before requesting again (max 2 faucet requests per IP/
   childPsbt.addInput({
     hash: parentTransaction.getId(),
     index: 0,
-    witnessUtxo: { script: P2A_SCRIPT, value: ANCHOR_VALUE }
+    witnessUtxo: { script: P2A_SCRIPT, value: 0 }
   });
   childPsbt.finalizeInput(0, () => ({
     finalScriptSig: Buffer.alloc(0),
@@ -194,10 +190,8 @@ Please wait a few seconds before requesting again (max 2 faucet requests per IP/
     vout: 1,
     txHex: parentTransaction.toHex()
   });
-  sourceOutput.updatePsbtAsOutput({
-    psbt: childPsbt,
-    value: destValue - FEE
-  });
+  //give back the money to ourselves
+  sourceOutput.updatePsbtAsOutput({ psbt: childPsbt, value: destValue - FEE });
   descriptors.signers.signBIP32({ psbt: childPsbt, masterNode });
   childInputFinalizer({ psbt: childPsbt });
 
