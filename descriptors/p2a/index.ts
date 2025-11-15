@@ -61,11 +61,14 @@ Every reload reuses the same mnemonic for convenience.`);
   // Check if the wallet already has confirmed funds
   Log(`🔍 Checking existing balance...`);
   const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
+  Log(`🔍 Wallet balance info: ${JSONf(sourceAddressInfo)}`);
   let fundingtTxId;
+
   if (
     sourceAddressInfo.unconfirmedBalance === 0 &&
     sourceAddressInfo.balance === 0
   ) {
+    Log(`💰 The wallet is empty. Let's request some funds...`);
     //New or empty wallet. Let's prepare the faucet request:
     const formData = new URLSearchParams();
     formData.append('address', sourceAddress);
@@ -123,9 +126,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
       // Confirmed?
       if (sourceAddressInfo.unconfirmedTxCount === 0) {
-        Log(
-          `🔍 Funding transaction is now confirmed: ${JSONf(sourceAddressInfo)}`
-        );
+        Log(`🔍 Funding transaction is confirmed: ${JSONf(sourceAddressInfo)}`);
         break;
       }
       // Not confirmed yet
