@@ -1,7 +1,7 @@
 // Copyright (c) 2023 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
 
-import './codesandboxFixes.js';
+import './codesandboxFixes';
 import * as ecc from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
@@ -50,6 +50,7 @@ const SOFT_MNEMONIC = `abandon abandon abandon abandon abandon abandon abandon \
 abandon abandon abandon abandon about`;
 const masterNode = BIP32.fromSeed(mnemonicToSeedSync(SOFT_MNEMONIC), network);
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let transport: any = null;
 const start = async () => {
   if (!transport) {
@@ -57,10 +58,11 @@ const start = async () => {
       `@ledgerhq/hw-transport-${isWeb ? 'web' : 'node-'}hid`
     );
     //while-loop hack to make it work both for Typescript & compiled Javascript
-    while (Transport.default) Transport = Transport.default as any;
+    while (Transport.default) Transport = Transport.default;
     try {
       transport = await Transport.create();
     } catch (err) {
+      void err;
       Log(`Not detected. Connect and <a href="javascript:start();">retry</a>.`);
       transport = null;
       return;
@@ -74,6 +76,7 @@ const start = async () => {
       minVersion: '2.1.0'
     });
   } catch (err) {
+    void err;
     await transport.close();
     transport = null;
     Log(`Open the Bitcoin Test App, version >= 2.1.0 and \
@@ -199,7 +202,7 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
   //Save ledgerState to localStorage
   if (isWeb) localStorage.setItem('ledger', JSON.stringify(ledgerState));
 };
-if (isWeb) (window as any).start = start;
+if (isWeb) (window as unknown as { start: typeof start }).start = start;
 
 if (isWeb) {
   document.body.innerHTML = `<div id="logs">Connect a Ledger, open Bitcoin Test\
