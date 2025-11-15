@@ -20,7 +20,7 @@ const Log = (message: string) => {
 //JSON to pretty-string format:
 const JSONf = (json: object) => JSON.stringify(json, null, '\t');
 
-const EXPLORER = `https://tape.rewindbitcoin.com`;
+const EXPLORER = `https://tape.rewindbitcoin.com/explorer`;
 const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
 const explorer = new EsploraExplorer({ url: ESPLORA_API });
