@@ -20,6 +20,7 @@ const Log = (message: string) => {
 //JSON to pretty-string format:
 const JSONf = (json: object) => JSON.stringify(json, null, '\t');
 
+const EXPLORER = `https://tape.rewindbitcoin.com`;
 const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
 const explorer = new EsploraExplorer({ url: ESPLORA_API });
@@ -56,7 +57,9 @@ Every reload reuses the same mnemonic for convenience.`);
     network
   });
   const sourceAddress = sourceOutput.getAddress();
-  Log(`📫 Source address: ${sourceAddress}`);
+  Log(
+    `📫 Source address: <a href="${EXPLORER}/${sourceAddress}" target="_blank">${sourceAddress}</a>`
+  );
 
   // Check if the wallet already has confirmed funds
   Log(`🔍 Checking existing balance...`);
@@ -104,7 +107,9 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       break;
     } catch (err) {
       void err;
-      Log(`⏳ Waiting for the funding transaction to be indexed...`);
+      Log(
+        `⏳ Waiting for the funding tx <a href="${EXPLORER}/${fundingtTxId}" target="_blank">${fundingtTxId}</a> to be indexed...`
+      );
     }
     await new Promise(r => setTimeout(r, 1000)); //sleep 1s
   }
@@ -114,7 +119,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     // Wait until the funding tx is in a block
     try {
       if (firstAttempt === true)
-        Log(`⏳ Waiting for the funding transaction to be confirmed...
+        Log(`⏳ Waiting for the funding tx ${fundingtTxId} to be confirmed...
 
    TRUC + P2A rules require the funding transaction to be in a block.
    This may take a few minutes.
@@ -126,7 +131,9 @@ Please retry (max 2 faucet requests per IP/address per minute).`
         sourceAddressInfo.unconfirmedBalance === 0 &&
         sourceAddressInfo.balance > 0
       ) {
-        Log(`🔍 Funding transaction is confirmed: ${JSONf(sourceAddressInfo)}`);
+        Log(
+          `🔍 Funding tx <a href="${EXPLORER}/${fundingtTxId}" target="_blank">${fundingtTxId}</a> is confirmed: ${JSONf(sourceAddressInfo)}`
+        );
         break;
       }
       // Not confirmed yet
@@ -197,7 +204,8 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const childTransaction = childPsbt.extractTransaction();
   Log(
-    `Parent txId: ${parentTransaction.getId()}, child txId: ${childTransaction.getId()}`
+    `🧑‍🍼 Parent tx (yes, the one with *zero fees*): <a href="${EXPLORER}/${parentTransaction.getId()}" target="_blank">${parentTransaction.getId()}</a>
+Child tx: <a href="${EXPLORER}/${childTransaction.getId()}" target="_blank">${childTransaction.getId()}</a>`
   );
 
   const pkgUrl = `${ESPLORA_API}/txs/package`;

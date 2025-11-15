@@ -1,7 +1,7 @@
 {
   "name": "playground",
   "type": "module",
-  "version": "2.2.6",
+  "version": "2.2.7",
   "scripts": {
     "descriptors/legacy2segwit": "clear && node --experimental-fetch ./descriptors/legacy2segwit/index.js",
     "descriptors/miniscript": "clear && node --experimental-fetch ./descriptors/miniscript/index.js",
