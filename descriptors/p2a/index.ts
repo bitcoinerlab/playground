@@ -1,5 +1,11 @@
 // Copyright (c) 2025 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
+
+//Learn more:
+//Guide: https://bitcoinops.org/en/bitcoin-core-28-wallet-integration-guide/
+//TRUC: https://bips.dev/431/
+//TRUC PR: https://github.com/bitcoin/bitcoin/pull/28948
+//P2A PR: https://github.com/bitcoin/bitcoin/pull/30352
 import './codesandboxFixes';
 import { readFileSync, writeFileSync } from 'fs';
 import * as descriptors from '@bitcoinerlab/descriptors';
@@ -160,7 +166,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     descriptor: wpkhBIP32({ masterNode, network, account: 1, keyPath: '/0/0' }),
     network
   });
-  const destAddress = destOutput.getAddress();
   const destValue = sourceValue; // Look ma! no fee!!
 
   const parentPsbt = new Psbt({ network });
@@ -204,6 +209,9 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const childTransaction = childPsbt.extractTransaction();
 
+  Log(`📦 Submitting parent + child as a package...
+
+Bitcoin Core will validate them together as a 1P1C package.`);
   const pkgUrl = `${ESPLORA_API}/txs/package`;
   const pkgRes = await fetch(pkgUrl, {
     method: 'POST',
@@ -222,10 +230,15 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const pkgRespJson = await pkgRes.json();
   Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
-  Log(
-    `🧑‍🍼 Parent tx (yes, the one with *zero fees*): <a href="${EXPLORER}/${parentTransaction.getId()}" target="_blank">${parentTransaction.getId()}</a>
-👶 Child tx: <a href="${EXPLORER}/${childTransaction.getId()}" target="_blank">${childTransaction.getId()}</a>`
-  );
+  Log(`
+🎉 Hooray! You just executed a TRUC (v3) + P2A fee bump:
+
+🧑‍🍼 Parent tx (yes, the one with *zero fees*): 
+  <a href="${EXPLORER}/${parentTransaction.getId()}" target="_blank">${parentTransaction.getId()}</a>
+
+👶 Child tx (pays the actual fee):
+  <a href="${EXPLORER}/${childTransaction.getId()}" target="_blank">${childTransaction.getId()}</a>
+`);
 };
 if (isWeb) (window as unknown as { start: typeof start }).start = start;
 
