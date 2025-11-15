@@ -25,15 +25,16 @@
  *
  * The file is shared across npm projects and hardlinked to each,
  * maintained in the root folder:
- *
- * rm descriptors/ledger/codesandboxFixes.js descriptors/legacy2segwit/codesandboxFixes.js descriptors/luna/codesandboxFixes.js descriptors/miniscript/codesandboxFixes.js descriptors/multisig-fallback-timelock/codesandboxFixes.js descriptors/p2a/codesandboxFixes.js
- *
- * ln descriptors/codesandboxFixes.js descriptors/ledger/codesandboxFixes.js
- * ln descriptors/codesandboxFixes.js descriptors/legacy2segwit/codesandboxFixes.js
- * ln descriptors/codesandboxFixes.js descriptors/luna/codesandboxFixes.js
- * ln descriptors/codesandboxFixes.js descriptors/miniscript/codesandboxFixes.js
- * ln descriptors/codesandboxFixes.js descriptors/multisig-fallback-timelock/codesandboxFixes.js
- * ln descriptors/codesandboxFixes.js descriptors/p2a/codesandboxFixes.js
+
+ rm descriptors/ledger/codesandboxFixes.ts descriptors/legacy2segwit/codesandboxFixes.ts descriptors/luna/codesandboxFixes.ts descriptors/miniscript/codesandboxFixes.ts descriptors/multisig-fallback-timelock/codesandboxFixes.ts descriptors/p2a/codesandboxFixes.ts
+ 
+ ln descriptors/codesandboxFixes.ts descriptors/ledger/codesandboxFixes.ts
+ ln descriptors/codesandboxFixes.ts descriptors/legacy2segwit/codesandboxFixes.ts
+ ln descriptors/codesandboxFixes.ts descriptors/luna/codesandboxFixes.ts
+ ln descriptors/codesandboxFixes.ts descriptors/miniscript/codesandboxFixes.ts
+ ln descriptors/codesandboxFixes.ts descriptors/multisig-fallback-timelock/codesandboxFixes.ts
+ ln descriptors/codesandboxFixes.ts descriptors/p2a/codesandboxFixes.ts
+
  */
 
 if (

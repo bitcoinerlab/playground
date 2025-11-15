@@ -7,7 +7,7 @@
 //This is the previous tx:
 //https://blockstream.info/tx/1c4e43be5b6e503c7aba1a83ade6ae5a7408a5aeaf504ce7519caf681aa9398e?expand
 //https://blockstream.info/api/tx/1c4e43be5b6e503c7aba1a83ade6ae5a7408a5aeaf504ce7519caf681aa9398e/hex
-import './codesandboxFixes.js';
+import './codesandboxFixes';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
 import { compilePolicy } from '@bitcoinerlab/miniscript';

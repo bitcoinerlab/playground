@@ -1,6 +1,6 @@
-"use strict";
 // Copyright (c) 2023 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
+
 /**
  * This script addresses an issue with CodeSandbox's polyfill for
  * Error.captureStackTrace leading to infinite recursion when the
@@ -36,13 +36,16 @@
  ln descriptors/codesandboxFixes.ts descriptors/p2a/codesandboxFixes.ts
 
  */
-if (Error.captureStackTrace &&
-    Error.captureStackTrace.toString().indexOf('[native code]') === -1) {
-    // It appears to be a polyfill. Apply the fix.
-    const originalPolyfill = Error.captureStackTrace;
-    Error.captureStackTrace = function (targetObject, constructorOpt) {
-        // eslint-disable-next-line
-        constructorOpt = constructorOpt || (() => { });
-        originalPolyfill.call(this, targetObject, constructorOpt);
-    };
+
+if (
+  Error.captureStackTrace &&
+  Error.captureStackTrace.toString().indexOf('[native code]') === -1
+) {
+  // It appears to be a polyfill. Apply the fix.
+  const originalPolyfill = Error.captureStackTrace;
+  Error.captureStackTrace = function (targetObject, constructorOpt) {
+    // eslint-disable-next-line
+    constructorOpt = constructorOpt || (() => {});
+    originalPolyfill.call(this, targetObject, constructorOpt);
+  };
 }
