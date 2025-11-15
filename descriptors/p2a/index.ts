@@ -64,10 +64,7 @@ Every reload reuses the same mnemonic for convenience.`);
   Log(`🔍 Wallet balance info: ${JSONf(sourceAddressInfo)}`);
   let fundingtTxId;
 
-  if (
-    sourceAddressInfo.unconfirmedBalance === 0 &&
-    sourceAddressInfo.balance === 0
-  ) {
+  if (sourceAddressInfo.balance + sourceAddressInfo.unconfirmedBalance === 0) {
     Log(`💰 The wallet is empty. Let's request some funds...`);
     //New or empty wallet. Let's prepare the faucet request:
     const formData = new URLSearchParams();
@@ -107,7 +104,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       break;
     } catch (err) {
       void err;
-      Log(`⏳ Waiting for the faucet transaction to be indexed...`);
+      Log(`⏳ Waiting for the funding transaction to be indexed...`);
     }
     await new Promise(r => setTimeout(r, 1000)); //sleep 1s
   }
@@ -125,7 +122,10 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 `);
       const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
       // Confirmed?
-      if (sourceAddressInfo.unconfirmedTxCount === 0) {
+      if (
+        sourceAddressInfo.unconfirmedBalance === 0 &&
+        sourceAddressInfo.balance > 0
+      ) {
         Log(`🔍 Funding transaction is confirmed: ${JSONf(sourceAddressInfo)}`);
         break;
       }
