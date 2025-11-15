@@ -209,7 +209,6 @@ Please wait a few seconds before requesting again (max 2 faucet requests per IP/
   const pkgUrl = `${ESPLORA_API}/txs/package`;
   const pkgRes = await fetch(pkgUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify([parentTransaction.toHex(), childTransaction.toHex()])
   });
 
