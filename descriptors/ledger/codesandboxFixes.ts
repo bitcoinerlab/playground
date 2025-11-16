@@ -27,7 +27,14 @@
  * maintained in the root folder:
 
  rm descriptors/ledger/codesandboxFixes.ts descriptors/legacy2segwit/codesandboxFixes.ts descriptors/luna/codesandboxFixes.ts descriptors/miniscript/codesandboxFixes.ts descriptors/multisig-fallback-timelock/codesandboxFixes.ts descriptors/p2a/codesandboxFixes.ts
- 
+
+ rm descriptors/ledger/codesandboxFixes.ts
+ rm descriptors/legacy2segwit/codesandboxFixes.ts
+ rm descriptors/luna/codesandboxFixes.ts
+ rm descriptors/miniscript/codesandboxFixes.ts
+ rm descriptors/multisig-fallback-timelock/codesandboxFixes.ts
+ rm descriptors/p2a/codesandboxFixes.ts
+
  ln descriptors/codesandboxFixes.ts descriptors/ledger/codesandboxFixes.ts
  ln descriptors/codesandboxFixes.ts descriptors/legacy2segwit/codesandboxFixes.ts
  ln descriptors/codesandboxFixes.ts descriptors/luna/codesandboxFixes.ts
