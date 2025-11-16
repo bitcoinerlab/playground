@@ -19,7 +19,7 @@ const Log = (message: string) => {
   const logsElement = isWeb && document.getElementById('logs');
   if (logsElement) {
     logsElement.innerHTML += `<p>${message}</p>`;
-    //logsElement?.lastElementChild?.scrollIntoView();
+    logsElement?.lastElementChild?.scrollIntoView();
   }
   console.log(message.replace(/<[^>]*>?/gm, '')); //strip html tags
 };
@@ -266,6 +266,7 @@ Bitcoin Core will validate them together as a 1P1C package.`);
 if (isWeb) (window as unknown as { start: typeof start }).start = start;
 
 if (isWeb) {
+  document.body.style.marginBottom = '60px'; //prevent CodeSandbox UI from overlapping the logs
   document.body.innerHTML = `
 <div id="logs" style="white-space: pre-wrap;font-family: monospace;">
   <a href="javascript:start();" id="start">Click to start!</a>

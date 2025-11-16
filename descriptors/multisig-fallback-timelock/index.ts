@@ -73,9 +73,9 @@ window.reset = () => {
   window.location.reload();
 };
 document.body.innerHTML = `<div style="font-size:0.95em;" id="logs"></div><div>
-<p style="padding-bottom:50px;"><a href="javascript:start();">Run</a>
+<p style="padding-bottom:60px;"><a href="javascript:start();">Run</a>
 &nbsp;&nbsp;&nbsp;&nbsp;<a href="javascript:reset();">Reset mnemonics</a></p>
-</div>`;
+</div>`; //60px padding to prevent CodeSandbox UI from overlapping the logs
 
 // =============================================================================
 // SETTINGS (edit to your convenience):
