@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Jose-Luis Landabaso - https://bitcoinerlab.com
+// Copyright (c) 2025 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
 
 /*

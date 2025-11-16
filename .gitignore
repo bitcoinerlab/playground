@@ -4,6 +4,7 @@
 **/*.js
 .emergencyWIF
 .unvaultMnemonic
+.frozenDescriptor
 .p2amnemonic
 node_modules/
 docs/

@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Jose-Luis Landabaso - https://bitcoinerlab.com
+// Copyright (c) 2025 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
 
 import './codesandboxFixes';
@@ -62,6 +62,7 @@ const start = async () => {
     //while-loop hack to make it work both for Typescript & compiled Javascript
     while (Transport.default) Transport = Transport.default;
     try {
+      Log(`Connect a Ledger device and enter the PIN. Waiting...`);
       transport = await Transport.create();
     } catch (err) {
       void err;

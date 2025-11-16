@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Jose-Luis Landabaso - https://bitcoinerlab.com
+// Copyright (c) 2025 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
 
 import './codesandboxFixes';
@@ -9,7 +9,7 @@ import { Psbt, networks } from 'bitcoinjs-lib';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
 // @ts-ignore
 import { encode as afterEncode } from 'bip65';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync } from 'fs';
 import type { ECPairInterface } from 'ecpair';
 
 const { Output, BIP32, ECPair } = descriptors.DescriptorsFactory(secp256k1);
@@ -75,27 +75,45 @@ Log(
 );
 
 const start = async () => {
-  const currentBlockHeight = parseInt(
-    await (await fetch(`${ESPLORA_API}/blocks/tip/height`)).text()
-  );
-  const after = afterEncode({ blocks: currentBlockHeight + BLOCKS });
-  Log(`Current block height: ${currentBlockHeight}`);
-  //Now let's prepare the wsh utxo:
-  const { miniscript, issane } = compilePolicy(POLICY(after));
-  if (!issane) throw new Error(`Error: miniscript not sane`);
   const unvaultKey = unvaultMasterNode.derivePath(
     `m${WSH_ORIGIN_PATH}${WSH_KEY_PATH}`
   ).publicKey;
-  const wshDescriptor = `wsh(${miniscript
-    .replace(
-      '@unvaultKey',
-      descriptors.keyExpressionBIP32({
-        masterNode: unvaultMasterNode,
-        originPath: WSH_ORIGIN_PATH,
-        keyPath: WSH_KEY_PATH
-      })
-    )
-    .replace('@emergencyKey', emergencyPair.publicKey.toString('hex'))})`;
+
+  //Try to grab the descriptor from earlier runs
+  let wshDescriptor;
+  if (isWeb) wshDescriptor = localStorage.getItem('frozenDescriptor');
+  else {
+    try {
+      wshDescriptor = readFileSync('.frozenDescriptor', 'utf8');
+    } catch {
+      wshDescriptor = null;
+    }
+  }
+
+  //Create the descriptor if this is a new run
+  if (!wshDescriptor) {
+    const currentBlockHeight = parseInt(
+      await (await fetch(`${ESPLORA_API}/blocks/tip/height`)).text()
+    );
+    const after = afterEncode({ blocks: currentBlockHeight + BLOCKS });
+    Log(`Current block height: ${currentBlockHeight}`);
+    //Now let's prepare the wsh utxo:
+    const { miniscript, issane } = compilePolicy(POLICY(after));
+    if (!issane) throw new Error(`Error: miniscript not sane`);
+    wshDescriptor = `wsh(${miniscript
+      .replace(
+        '@unvaultKey',
+        descriptors.keyExpressionBIP32({
+          masterNode: unvaultMasterNode,
+          originPath: WSH_ORIGIN_PATH,
+          keyPath: WSH_KEY_PATH
+        })
+      )
+      .replace('@emergencyKey', emergencyPair.publicKey.toString('hex'))})`;
+    if (isWeb) localStorage.setItem('frozenDescriptor', wshDescriptor);
+    else writeFileSync('.frozenDescriptor', wshDescriptor);
+  }
+
   const wshOutput = new Output({
     descriptor: wshDescriptor,
     network,
@@ -155,6 +173,12 @@ const start = async () => {
     } else {
       const txId = spendTx.getId();
       Log(`Success. <a href="${EXPLORER}/tx/${txId}?expand">Check it!</a>`);
+      //Remove the descriptor for next runs
+      if (isWeb) localStorage.removeItem('frozenDescriptor');
+      else
+        try {
+          unlinkSync('.frozenDescriptor');
+        } catch {}
     }
   } else {
     Log(`Not yet! Use ${FAUCET} to send some sats to:`);
