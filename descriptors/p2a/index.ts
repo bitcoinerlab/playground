@@ -19,7 +19,7 @@ const Log = (message: string) => {
   const logsElement = isWeb && document.getElementById('logs');
   if (logsElement) {
     logsElement.innerHTML += `<p>${message}</p>`;
-    logsElement?.lastElementChild?.scrollIntoView();
+    //logsElement?.lastElementChild?.scrollIntoView();
   }
   console.log(message.replace(/<[^>]*>?/gm, '')); //strip html tags
 };
