@@ -33,8 +33,20 @@ const explorer = new EsploraExplorer({ url: ESPLORA_API });
 const { wpkhBIP32 } = descriptors.scriptExpressions;
 const { Output, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 const network = networks.regtest;
-const FEE = 500;
+const FEE = 500; //The fee for the package
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
+
+// The TAPE testnet mines *exactly* every 10 minutes. Learn more: tape.rewindbitcoin.com
+// Yes... deterministic blocks. Because it's my blockchain, my rules 😎
+const estimateNextTapeBlock = () => {
+  const n = new Date();
+  const t = new Date(n); //clone it
+  const m = n.getMinutes();
+  t.setMinutes(Math.ceil(m / 10) * 10, 0, 0);
+  if (t <= n) t.setHours(t.getHours() + 1, 0, 0); // handle minute=60 rollover
+  const d = (t.getTime() - n.getTime()) / 1000;
+  return `${Math.floor(d / 60)}m ${Math.floor(d % 60)}s`;
+};
 
 const start = async () => {
   let mnemonic; //Let's create a basic wallet:
@@ -73,14 +85,11 @@ Every reload reuses the same mnemonic for convenience.`);
   Log(`🔍 Wallet balance info: ${JSONf(sourceAddressInfo)}`);
   let fundingtTxId;
 
-  if (sourceAddressInfo.balance + sourceAddressInfo.unconfirmedBalance === 0) {
+  if (sourceAddressInfo.balance + sourceAddressInfo.unconfirmedBalance < FEE) {
     Log(`💰 The wallet is empty. Let's request some funds...`);
     //New or empty wallet. Let's prepare the faucet request:
     const formData = new URLSearchParams();
     formData.append('address', sourceAddress);
-    //Ask the faucet to forceConfirm this transaction. The TAPE testnet allows
-    //mining after the request but with limits it to prevent abuse. Not guaranteed.
-    formData.append('forceConfirm', 'true');
     const faucetRes = await fetch(FAUCET_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -133,15 +142,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   for (;;) {
     // Wait until the funding tx is in a block
     try {
-      if (firstAttempt === true)
-        Log(`
-
-⛓️ TRUC + P2A rules require the funding transaction to be included in a block.
-   This may take a few minutes.
-
-⏳ Waiting for the funding tx 
-   <a href="${EXPLORER}/${fundingtTxId}" target="_blank">${fundingtTxId}</a>
-   to be confirmed...`);
       const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
       // Confirmed?
       if (
@@ -154,7 +154,20 @@ Please retry (max 2 faucet requests per IP/address per minute).`
         break;
       }
       // Not confirmed yet
-      Log(`⏳ Still waiting for confirmation...`);
+      if (firstAttempt === true)
+        Log(`
+
+⛓️ TRUC + P2A rules require the funding transaction to be included in a block.
+   On the TAPE testnet, blocks are mined every 10 minutes *on the dot*.
+   ETA to next block: **${estimateNextTapeBlock()}**
+
+⏳ Waiting for the funding tx 
+   <a href="${EXPLORER}/${fundingtTxId}" target="_blank">${fundingtTxId}</a>
+   to be confirmed...`);
+      else
+        Log(
+          `⏳ Still waiting for confirmation... next block ETA: ${estimateNextTapeBlock()}`
+        );
     } catch (err) {
       Log(`⏳ Something went wrong while waiting for confirmation: ${err}`);
     }
