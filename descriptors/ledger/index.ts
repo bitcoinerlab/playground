@@ -12,8 +12,10 @@ import { encode as olderEncode } from 'bip68';
 import { AppClient } from 'ledger-bitcoin';
 const { Output, BIP32 } = descriptors.DescriptorsFactory(ecc);
 
-const network = networks.testnet;
-const EXPLORER = 'https://blockstream.info/testnet';
+const EXPLORER = 'https://tape.rewindbitcoin.com/explorer';
+const ESPLORA_API = 'https://tape.rewindbitcoin.com/api';
+const FAUCET = 'https://tape.rewindbitcoin.com';
+const network = networks.regtest;
 const isWeb = typeof window !== 'undefined';
 const Log = (message: string) => {
   const logsElement = isWeb && document.getElementById('logs');
@@ -127,23 +129,23 @@ const start = async () => {
   const psbtInputFinalizers = [];
   Log(`Fund the utxos. Let's first check if they're already funded...`);
   const wpkhUtxo = await (
-    await fetch(`${EXPLORER}/api/address/${wpkhAddress}/utxo`)
+    await fetch(`${ESPLORA_API}/address/${wpkhAddress}/utxo`)
   ).json();
   const wshUtxo = await (
-    await fetch(`${EXPLORER}/api/address/${wshAddress}/utxo`)
+    await fetch(`${ESPLORA_API}/address/${wshAddress}/utxo`)
   ).json();
   if (wpkhUtxo?.[0] && wshUtxo?.[0]) {
     Log(`Successfully funded. Now let's spend them. Go to your Ledger now! You \
 may need to register the Policy (only once) and then accept spending 2 utxos.`);
     let txHex = await (
-      await fetch(`${EXPLORER}/api/tx/${wpkhUtxo?.[0].txid}/hex`)
+      await fetch(`${ESPLORA_API}/tx/${wpkhUtxo?.[0].txid}/hex`)
     ).text();
     let inputValue = wpkhUtxo[0].value;
     psbtInputFinalizers.push(
       wpkhOutput.updatePsbtAsInput({ psbt, txHex, vout: wpkhUtxo[0].vout })
     );
     txHex = await (
-      await fetch(`${EXPLORER}/api/tx/${wshUtxo?.[0].txid}/hex`)
+      await fetch(`${ESPLORA_API}/tx/${wshUtxo?.[0].txid}/hex`)
     ).text();
     inputValue += wshUtxo[0].value;
     psbtInputFinalizers.push(
@@ -176,7 +178,7 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
     psbtInputFinalizers.forEach(inputFinalizer => inputFinalizer({ psbt }));
     const spendTx = psbt.extractTransaction();
     const spendTxPushResult = await (
-      await fetch(`${EXPLORER}/api/tx`, {
+      await fetch(`${ESPLORA_API}/tx`, {
         method: 'POST',
         body: spendTx.toHex()
       })
@@ -194,7 +196,7 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
       );
     }
   } else {
-    Log(`Not yet! Use https://bitcoinfaucet.uo1.net to get some sats:`);
+    Log(`Not yet! Use ${FAUCET} to get some sats:`);
     Log(`${wpkhAddress}: ${wpkhUtxo?.[0] ? 'Funded!' : 'NOT funded'}`);
     Log(`${wshAddress}: ${wshUtxo?.[0] ? 'Funded!' : 'NOT funded'}`);
     Log(`Fund them and <a href="javascript:start();">check again</a>.`);

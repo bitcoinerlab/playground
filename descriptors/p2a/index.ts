@@ -39,13 +39,12 @@ const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 // The TAPE testnet mines *exactly* every 10 minutes. Learn more: tape.rewindbitcoin.com
 // Yes... deterministic blocks. Because it's my blockchain, my rules 😎
 const estimateNextTapeBlock = () => {
-  const n = new Date();
-  const t = new Date(n); //clone it
-  const m = n.getMinutes();
-  t.setMinutes(Math.ceil(m / 10) * 10, 0, 0);
-  if (t <= n) t.setHours(t.getHours() + 1, 0, 0); // handle minute=60 rollover
-  const d = (t.getTime() - n.getTime()) / 1000;
-  return `${Math.floor(d / 60)}m ${Math.floor(d % 60)}s`;
+  const now = new Date();
+  const nextBlock = new Date(now); //clone it
+  nextBlock.setMinutes(Math.ceil(now.getMinutes() / 10) * 10, 0, 0);
+  if (nextBlock <= now) nextBlock.setMinutes(nextBlock.getMinutes() + 10);
+  const delta = (nextBlock.getTime() - now.getTime()) / 1000;
+  return `${Math.floor(delta / 60)}m ${Math.floor(delta % 60)}s`;
 };
 
 const start = async () => {

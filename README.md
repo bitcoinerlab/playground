@@ -63,16 +63,6 @@ Covers transport selection (WebHID / NodeHID), derivation policies and multi-inp
 npm run descriptors/ledger
 ```
 
-### `descriptors/p2a`
-
-**Guide**: [https://bitcoinerlab.com/guides/p2a](https://bitcoinerlab.com/guides/p2a)
-
-Learn how to construct a **P2A (Pay-to-Anchor)** output and how these outputs are used as the anchor for **TRUC fee-bumping transactions**.
-
-```bash
-npm run descriptors/p2a
-```
-
 ### `descriptors/multisig-fallback-timelock`
 
 **Guide**: [https://bitcoinerlab.com/guides/multisig-fallback-timelock](https://bitcoinerlab.com/guides/multisig-fallback-timelock)
@@ -82,6 +72,16 @@ Useful for inheritance, recovery-wallet setups and collaborative custody.
 
 ```bash
 npm run descriptors/multisig-fallback-timelock
+```
+
+### `descriptors/p2a`
+
+**Guide**: [https://bitcoinerlab.com/guides/p2a](https://bitcoinerlab.com/guides/p2a)
+
+Learn how to construct a **P2A (Pay-to-Anchor)** output and how these outputs are used as the anchor for **TRUC fee-bumping transactions**.
+
+```bash
+npm run descriptors/p2a
 ```
 
 ## License

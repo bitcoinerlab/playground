@@ -41,7 +41,6 @@ import { encode as olderEncode } from 'bip68';
 const signers = descriptors.signers;
 
 const { Output, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
-const FAUCET = 'https://bitcoinfaucet.uo1.net';
 
 //JSON to pretty-string format:
 const JSONf = (json: object) => {
@@ -98,7 +97,7 @@ const ORIGIN_PATH = "/69420'";
 const KEY_PATH = '/0';
 //Set the address that will get the funds when spending from the wallet:
 const FINAL_ADDRESS = isTestnet
-  ? 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge' //Testnet address
+  ? 'bcrt1qfz7vd3yxx0dcgdse36k4r66frhh4dkzpn3c3wx' //Tape testnet address
   : '3FYsjXPy81f96odShrKQoAiLFVmt6Tjf4g'; //Mainnet address
 const FEE = 300; //The vsize of this tx will be ~147 vbytes. Pay ~2 sats/vbyte
 //Set the mnemonics with quotes or generateMnemonic() to create random ones:
@@ -112,8 +111,14 @@ const FALLBACK_MNEMONIC = generateMnemonic();
 // =============================================================================
 // THE PROGRAM STARTS HERE:
 // =============================================================================
-const EXPLORER = `https://blockstream.info/${isTestnet ? 'testnet' : ''}`;
-const network = isTestnet ? networks.testnet : networks.bitcoin;
+const EXPLORER = isTestnet
+  ? 'https://tape.rewindbitcoin.com/explorer'
+  : 'https://blockstream.info';
+const ESPLORA_API = isTestnet
+  ? 'https://tape.rewindbitcoin.com/api'
+  : 'https://blockstream.info/api';
+const FAUCET = 'https://tape.rewindbitcoin.com';
+const network = isTestnet ? networks.regtest : networks.bitcoin;
 //Try to retrieve the mnemonics from the browsers storage. If not there, then
 //create some random mnemonics (or assign any mnemonic we choose)
 const storedMnemonics = localStorage.getItem('mnemonics');
@@ -180,19 +185,19 @@ const walletAddress = output.getAddress();
 Log(`Wallet address: ${walletAddress}`);
 window.start = async () => {
   const currentBlockHeight = parseInt(
-    await (await fetch(`${EXPLORER}/api/blocks/tip/height`)).text(),
+    await (await fetch(`${ESPLORA_API}/blocks/tip/height`)).text(),
     10
   );
   Log(`<b>===== RUN: #${run++} · BLOCK HEIGHT: ${currentBlockHeight} · 
       TIME: ${new Date().toLocaleTimeString()} =====</b>`);
   Log(`Let's check if the wallet has funds...`);
   const utxo = await (
-    await fetch(`${EXPLORER}/api/address/${walletAddress}/utxo`)
+    await fetch(`${ESPLORA_API}/address/${walletAddress}/utxo`)
   ).json();
   if (utxo?.[0]) {
     Log(`Yes, it's funded! Now, let's try to spend the funds from the wallet.`);
     const txHex = await (
-      await fetch(`${EXPLORER}/api/tx/${utxo?.[0].txid}/hex`)
+      await fetch(`${ESPLORA_API}/tx/${utxo?.[0].txid}/hex`)
     ).text();
     const inputValue = utxo[0].value;
     const psbt = new Psbt({ network });
@@ -227,7 +232,7 @@ window.start = async () => {
     inputFinalizer({ psbt });
     const spendTx = psbt.extractTransaction();
     const spendTxPushResult = await (
-      await fetch(`${EXPLORER}/api/tx`, {
+      await fetch(`${ESPLORA_API}/tx`, {
         method: 'POST',
         body: spendTx.toHex()
       })

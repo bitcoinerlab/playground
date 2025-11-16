@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Jose-Luis Landabaso - https://bitcoinerlab.com
+// Copyright (c) 2025 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
 
 import './codesandboxFixes';
@@ -10,6 +10,7 @@ const { pkhBIP32, wpkhBIP32 } = descriptors.scriptExpressions;
 const { Output, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 const network = networks.testnet;
 const EXPLORER = 'https://blockstream.info/testnet';
+const ESPLORA_API = 'https://blockstream.info/testnet/api';
 const FEE = 500;
 
 //Let's create our software wallet with this mnemonic:
@@ -31,8 +32,8 @@ console.log(`We start with:`, { address: legacyOutput.getAddress(), TXID });
 
 //Let's get the utxo info (txHex & vout) of the initial tx to the Legacy address
 (async () => {
-  const txHex = await (await fetch(`${EXPLORER}/api/tx/${TXID}/hex`)).text();
-  const txJson = (await (await fetch(`${EXPLORER}/api/tx/${TXID}`)).json()) as {
+  const txHex = await (await fetch(`${ESPLORA_API}/tx/${TXID}/hex`)).text();
+  const txJson = (await (await fetch(`${ESPLORA_API}/tx/${TXID}`)).json()) as {
     vout: { scriptpubkey: string; value: number }[];
   };
   const txOuts = txJson.vout;
@@ -69,7 +70,7 @@ console.log(`We start with:`, { address: legacyOutput.getAddress(), TXID });
   const spendTx = psbt.extractTransaction();
   //When you try this, it won't be accepted (again), indeed.
   const spendTxPushResult = await (
-    await fetch(`${EXPLORER}/api/tx`, { method: 'POST', body: spendTx.toHex() })
+    await fetch(`${ESPLORA_API}/tx`, { method: 'POST', body: spendTx.toHex() })
   ).text();
 
   console.log({ tx: spendTx.toHex(), spendTxPushResult });

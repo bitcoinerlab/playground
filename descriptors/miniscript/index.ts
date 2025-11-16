@@ -14,8 +14,10 @@ import type { ECPairInterface } from 'ecpair';
 
 const { Output, BIP32, ECPair } = descriptors.DescriptorsFactory(secp256k1);
 
-const network = networks.testnet;
-const EXPLORER = 'https://blockstream.info/testnet';
+const EXPLORER = 'https://tape.rewindbitcoin.com/explorer';
+const ESPLORA_API = 'https://tape.rewindbitcoin.com/api';
+const FAUCET = 'https://tape.rewindbitcoin.com';
+const network = networks.regtest;
 const isWeb = typeof window !== 'undefined';
 const Log = (message: string) => {
   const logsElement = isWeb && document.getElementById('logs');
@@ -74,7 +76,7 @@ Log(
 
 const start = async () => {
   const currentBlockHeight = parseInt(
-    await (await fetch(`${EXPLORER}/api/blocks/tip/height`)).text()
+    await (await fetch(`${ESPLORA_API}/blocks/tip/height`)).text()
   );
   const after = afterEncode({ blocks: currentBlockHeight + BLOCKS });
   Log(`Current block height: ${currentBlockHeight}`);
@@ -102,12 +104,12 @@ const start = async () => {
   const wshAddress = wshOutput.getAddress();
   Log(`Fund your vault. Let's first check if it's been already funded...`);
   const utxo = await (
-    await fetch(`${EXPLORER}/api/address/${wshAddress}/utxo`)
+    await fetch(`${ESPLORA_API}/address/${wshAddress}/utxo`)
   ).json();
   if (utxo?.[0]) {
     Log(`Successfully funded. Now let's spend the funds.`);
     const txHex = await (
-      await fetch(`${EXPLORER}/api/tx/${utxo?.[0].txid}/hex`)
+      await fetch(`${ESPLORA_API}/tx/${utxo?.[0].txid}/hex`)
     ).text();
     const inputValue = utxo[0].value;
     const psbt = new Psbt({ network });
@@ -122,18 +124,11 @@ const start = async () => {
     new Output({
       descriptor: `addr(${
         EMERGENCY_RECOVERY
-          ? 'mkpZhYtJu2r87Js3pDiWJDmPte2NRZ8bJV'
-          : 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge'
+          ? 'bcrt1qn9v3ltz5vw637k0t28qt3jfrksyfvnsyxhl5mf'
+          : 'bcrt1qfz7vd3yxx0dcgdse36k4r66frhh4dkzpn3c3wx'
       })`,
       network
     }).updatePsbtAsOutput({ psbt, value: inputValue - 1000 });
-    //This is equivalent to the above:
-    //psbt.addOutput({
-    //  address: EMERGENCY_RECOVERY
-    //    ? 'mkpZhYtJu2r87Js3pDiWJDmPte2NRZ8bJV'
-    //    : 'tb1q4280xax2lt0u5a5s9hd4easuvzalm8v9ege9ge',
-    //  value: inputValue - 1000
-    //});
 
     //Now sign the PSBT with the BIP32 node (the software wallet)
     if (EMERGENCY_RECOVERY)
@@ -143,7 +138,7 @@ const start = async () => {
     inputFinalizer({ psbt });
     const spendTx = psbt.extractTransaction();
     const spendTxPushResult = await (
-      await fetch(`${EXPLORER}/api/tx`, {
+      await fetch(`${ESPLORA_API}/tx`, {
         method: 'POST',
         body: spendTx.toHex()
       })
@@ -162,7 +157,7 @@ const start = async () => {
       Log(`Success. <a href="${EXPLORER}/tx/${txId}?expand">Check it!</a>`);
     }
   } else {
-    Log(`Not yet! Use https://bitcoinfaucet.uo1.net to send some sats to:`);
+    Log(`Not yet! Use ${FAUCET} to send some sats to:`);
     Log(`${wshAddress} Fund it & <a href="javascript:start()">check again</a>`);
   }
 };

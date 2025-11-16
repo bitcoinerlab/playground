@@ -1,12 +1,12 @@
 {
   "name": "playground",
   "type": "module",
-  "version": "2.2.13",
+  "version": "2.3.0",
   "scripts": {
     "descriptors/legacy2segwit": "tsx ./descriptors/legacy2segwit/index.ts",
     "descriptors/miniscript": "tsx ./descriptors/miniscript/index.ts",
     "descriptors/ledger": "tsx ./descriptors/ledger/index.ts",
-    "descriptors/luna": "tsx ./descriptors/luna/index.ts",
+    "descriptors/multisig-fallback-timelock": "tsx ./descriptors/multisig-fallback-timelock/index.ts",
     "descriptors/p2a": "tsx ./descriptors/p2a/index.ts",
     "build": "npx tsc",
     "lint": "eslint . --ext .ts --ignore-pattern '**/*.d.ts'"
