@@ -137,45 +137,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     await new Promise(r => setTimeout(r, 1000)); //sleep 1s
   }
 
-  const vaultPair = ECPair.makeRandom();
-
-  let firstAttempt = true;
-  while (true) {
-    // Wait until the funding tx is in a block
-    try {
-      const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
-      // Confirmed?
-      if (
-        sourceAddressInfo.unconfirmedBalance === 0 &&
-        sourceAddressInfo.balance > 0
-      ) {
-        Log(
-          `🔍 Funding tx <a href="${EXPLORER}/${fundingtTxId}" target="_blank">${fundingtTxId}</a> is confirmed: ${JSONf(sourceAddressInfo)}`
-        );
-        break;
-      }
-      // Not confirmed yet
-      if (firstAttempt === true)
-        Log(`
-
-⛓️ TRUC + P2A rules require the funding transaction to be included in a block.
-   On the TAPE testnet, blocks are mined every 10 minutes *on the dot*.
-   ETA to next block: **${estimateNextTapeBlock()}**
-
-⏳ Waiting for the funding tx 
-   <a href="${EXPLORER}/${fundingtTxId}" target="_blank">${fundingtTxId}</a>
-   to be confirmed...`);
-      else
-        Log(
-          `⏳ Still waiting for confirmation... next block ETA: ${estimateNextTapeBlock()}`
-        );
-    } catch (err) {
-      Log(`⏳ Something went wrong while waiting for confirmation: ${err}`);
-    }
-    await new Promise(r => setTimeout(r, firstAttempt ? 5000 : 10000)); //sleep 5/10s
-    firstAttempt = false;
-  }
-
   const fundingTransaction = Transaction.fromHex(fundingTxHex);
   const fundingVout = fundingTransaction.outs.findIndex(
     txOut =>
@@ -186,6 +147,13 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const sourceValue = fundingTransaction.outs[fundingVout].value;
   Log(`💎 Initial value (sats): ${sourceValue}`);
+
+  const vaultPair = ECPair.makeRandom();
+  const vaultOutput = new Output({
+    descriptor: `wpkh(${vaultPair.publicKey.toString('hex')})`,
+    network
+  });
+
   // Create destination address (account 1)
   const destOutput = new Output({
     descriptor: wpkhBIP32({ masterNode, network, account: 1, keyPath: '/0/0' }),
