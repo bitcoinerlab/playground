@@ -33,19 +33,7 @@ const explorer = new EsploraExplorer({ url: ESPLORA_API });
 const { wpkhBIP32 } = descriptors.scriptExpressions;
 const { Output, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 const network = networks.regtest;
-const FEE = 500; //The fee for the package
-const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
-
-// The TAPE testnet mines *exactly* every 10 minutes. Learn more: tape.rewindbitcoin.com
-// Yes... deterministic blocks. Because it's my blockchain, my rules 😎
-const estimateNextTapeBlock = () => {
-  const now = new Date();
-  const nextBlock = new Date(now); //clone it
-  nextBlock.setMinutes(Math.ceil(now.getMinutes() / 10) * 10, 0, 0);
-  if (nextBlock <= now) nextBlock.setMinutes(nextBlock.getMinutes() + 10);
-  const delta = (nextBlock.getTime() - now.getTime()) / 1000;
-  return `${Math.floor(delta / 60)}m ${Math.floor(delta % 60)}s`;
-};
+const FEE = 500;
 
 const start = async () => {
   let mnemonic; //Let's create a basic wallet:
