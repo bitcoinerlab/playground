@@ -31,7 +31,7 @@ const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
 const explorer = new EsploraExplorer({ url: ESPLORA_API });
 const { wpkhBIP32 } = descriptors.scriptExpressions;
-const { Output, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
+const { Output, BIP32, ECPair } = descriptors.DescriptorsFactory(secp256k1);
 const network = networks.regtest;
 const FEE = 500;
 
