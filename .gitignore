@@ -6,6 +6,7 @@
 .unvaultMnemonic
 .frozenDescriptor
 .p2amnemonic
+.inscriptionsmnemonic
 node_modules/
 docs/
 dist/

@@ -1,11 +1,6 @@
 // Copyright (c) 2025 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
 
-//Learn more:
-//Guide: https://bitcoinops.org/en/bitcoin-core-28-wallet-integration-guide/
-//TRUC: https://bips.dev/431/
-//TRUC PR: https://github.com/bitcoin/bitcoin/pull/28948
-//P2A PR: https://github.com/bitcoin/bitcoin/pull/30352
 import './codesandboxFixes';
 import { readFileSync, writeFileSync } from 'fs';
 import * as descriptors from '@bitcoinerlab/descriptors';
@@ -27,6 +22,8 @@ const Log = (message: string) => {
 //JSON to pretty-string format:
 const JSONf = (json: object) => JSON.stringify(json, null, '\t');
 
+const SIGNER_TYPE: 'ECPAIR' | 'BIP32' = 'ECPAIR';
+
 const EXPLORER = `https://tape.rewindbitcoin.com/explorer`;
 const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
@@ -40,17 +37,17 @@ const FEE = 500;
 const start = async () => {
   let mnemonic; //Let's create a basic wallet:
   if (isWeb) {
-    mnemonic = localStorage.getItem('p2amnemonic');
+    mnemonic = localStorage.getItem('inscriptionsmnemonic');
     if (!mnemonic) {
       mnemonic = generateMnemonic();
-      localStorage.setItem('p2amnemonic', mnemonic);
+      localStorage.setItem('inscriptionsmnemonic', mnemonic);
     }
   } else {
     try {
-      mnemonic = readFileSync('.p2amnemonic', 'utf8');
+      mnemonic = readFileSync('.inscriptionsmnemonic', 'utf8');
     } catch {
       mnemonic = generateMnemonic();
-      writeFileSync('.p2amnemonic', mnemonic);
+      writeFileSync('.inscriptionsmnemonic', mnemonic);
     }
   }
   Log(`🔐 This is your demo wallet (mnemonic):
@@ -138,91 +135,96 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   const sourceValue = fundingTransaction.outs[fundingVout].value;
   Log(`💎 Initial value (sats): ${sourceValue}`);
 
-  const vaultPair = ECPair.makeRandom();
-  const vaultOutput = new Inscription({
-    contentType: 'application/vnd.rewindbitcoin;readme=inscription:123456',
+  const inscriptionPair = ECPair.makeRandom();
+  const inscriptionMasterNode = BIP32.fromSeed(
+    mnemonicToSeedSync(generateMnemonic()),
+    network
+  );
+  const inscriptionOutput = new Inscription({
+    contentType: 'text/plain;charset=utf-8',
     content: Buffer.from('Hello world!'),
-    internalPubKey: vaultPair.publicKey,
+    ...(SIGNER_TYPE === 'ECPAIR'
+      ? { internalPubKey: inscriptionPair.publicKey }
+      : {
+        bip32Derivation: {
+          masterFingerprint: inscriptionMasterNode.fingerprint,
+          path: "m/123'/0'/0'/0/0",
+          pubkey:
+            inscriptionMasterNode.derivePath("m/123'/0'/0'/0/0").publicKey
+        }
+      }),
     network
   });
 
-  // Create destination address (account 1)
-  const destOutput = new Output({
-    descriptor: wpkhBIP32({ masterNode, network, account: 1, keyPath: '/0/0' }),
-    network
-  });
-  const destValue = sourceValue; // Look ma! no fee!!
-
-  const parentPsbt = new Psbt({ network });
-  parentPsbt.setVersion(3);
-  const parentInputFinalizer = sourceOutput.updatePsbtAsInput({
-    psbt: parentPsbt,
+  const commitPsbt = new Psbt({ network });
+  const commitInputFinalizer = sourceOutput.updatePsbtAsInput({
+    psbt: commitPsbt,
     vout: fundingVout,
     txHex: fundingTxHex
   });
-  parentPsbt.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
-  destOutput.updatePsbtAsOutput({ psbt: parentPsbt, value: destValue }); //vout: 1
+  inscriptionOutput.updatePsbtAsOutput({
+    psbt: commitPsbt,
+    value: sourceValue - FEE
+  }); //vout: 0
 
-  descriptors.signers.signBIP32({ psbt: parentPsbt, masterNode });
-  parentInputFinalizer({ psbt: parentPsbt });
+  descriptors.signers.signBIP32({ psbt: commitPsbt, masterNode });
+  commitInputFinalizer({ psbt: commitPsbt });
 
-  const childPsbt = new Psbt({ network });
-  childPsbt.setVersion(3);
+  const commitTransaction = commitPsbt.extractTransaction();
 
-  const parentTransaction = parentPsbt.extractTransaction();
-
-  childPsbt.addInput({
-    hash: parentTransaction.getId(),
-    index: 0,
-    witnessUtxo: { script: P2A_SCRIPT, value: 0 }
-  });
-  childPsbt.finalizeInput(0, () => ({
-    finalScriptSig: Buffer.alloc(0),
-    finalScriptWitness: Buffer.from([0x00]) // empty item
-  }));
-
-  // This spends both outputs from the parent
-  const childInputFinalizer = destOutput.updatePsbtAsInput({
-    psbt: childPsbt,
-    vout: 1,
-    txHex: parentTransaction.toHex()
+  const revealPsbt = new Psbt({ network });
+  const revealInputFinalizer = inscriptionOutput.updatePsbtAsInput({
+    psbt: revealPsbt,
+    vout: 0,
+    txHex: commitTransaction.toHex()
   });
   //give back the money to ourselves
-  sourceOutput.updatePsbtAsOutput({ psbt: childPsbt, value: destValue - FEE });
-  descriptors.signers.signBIP32({ psbt: childPsbt, masterNode });
-  childInputFinalizer({ psbt: childPsbt });
-
-  const childTransaction = childPsbt.extractTransaction();
-
-  Log(`📦 Submitting parent + child as a package...
-
-Bitcoin Core will validate them together as a 1P1C package.`);
-  const pkgUrl = `${ESPLORA_API}/txs/package`;
-  const pkgRes = await fetch(pkgUrl, {
-    method: 'POST',
-    body: JSON.stringify([parentTransaction.toHex(), childTransaction.toHex()])
+  sourceOutput.updatePsbtAsOutput({
+    psbt: revealPsbt,
+    value: sourceValue - 2 * FEE
   });
+  if (SIGNER_TYPE === 'ECPAIR')
+    descriptors.signers.signECPair({
+      psbt: revealPsbt,
+      ecpair: inscriptionPair
+    });
+  else
+    descriptors.signers.signBIP32({
+      psbt: revealPsbt,
+      masterNode: inscriptionMasterNode
+    });
 
-  if (pkgRes.status === 404) {
-    throw new Error(
-      `Package endpoint not available at ${pkgUrl}. Your Esplora instance likely doesn't support /txs/package`
-    );
-  }
-  if (!pkgRes.ok) {
-    const errText = await pkgRes.text();
-    throw new Error(`Package submit failed (${pkgRes.status}): ${errText}`);
+  revealInputFinalizer({ psbt: revealPsbt });
+
+  const revealTransaction = revealPsbt.extractTransaction();
+
+  Log(`📦 Submitting commit...`);
+  await explorer.push(commitTransaction.toHex());
+  const commitTxId = commitTransaction.getId();
+  while (true) {
+    // Ping the esplora for the txHex (may need to wait until the tx is indexed)
+    try {
+      await explorer.fetchTx(commitTxId);
+      break;
+    } catch (err) {
+      void err;
+      Log(
+        `⏳ Waiting for the commit tx <a href="${EXPLORER}/${commitTxId}" target="_blank">${commitTxId}</a> to be indexed...`
+      );
+    }
+    await new Promise(r => setTimeout(r, 1000)); //sleep 1s
   }
 
-  const pkgRespJson = await pkgRes.json();
-  Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
+  Log(`📦 Submitting reveal...`);
+  await explorer.push(revealTransaction.toHex());
   Log(`
-🎉 Hooray! You just executed a TRUC (v3) + P2A fee bump:
+🎉 Hooray! You just executed the inscriptions playground
 
-🧑‍🍼 Parent tx (yes, the one with *zero fees*): 
-  <a href="${EXPLORER}/${parentTransaction.getId()}" target="_blank">${parentTransaction.getId()}</a>
+Commit tx: 
+  <a href="${EXPLORER}/${commitTransaction.getId()}" target="_blank">${commitTransaction.getId()}</a>
 
-👶 Child tx (pays the actual fee):
-  <a href="${EXPLORER}/${childTransaction.getId()}" target="_blank">${childTransaction.getId()}</a>
+Reveal tx:
+  <a href="${EXPLORER}/${revealTransaction.getId()}" target="_blank">${revealTransaction.getId()}</a>
 `);
 };
 if (isWeb) (window as unknown as { start: typeof start }).start = start;

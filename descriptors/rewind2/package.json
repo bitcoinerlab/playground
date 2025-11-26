@@ -8,6 +8,7 @@
     "descriptors/ledger": "tsx ./descriptors/ledger/index.ts",
     "descriptors/multisig-fallback-timelock": "tsx ./descriptors/multisig-fallback-timelock/index.ts",
     "descriptors/p2a": "tsx ./descriptors/p2a/index.ts",
+    "descriptors/inscriptions": "tsx ./descriptors/inscriptions/index.ts",
     "descriptors/rewind2": "tsx ./descriptors/rewind2/index.ts",
     "build": "npx tsc",
     "lint": "eslint . --ext .ts --ignore-pattern '**/*.d.ts'"
@@ -15,7 +16,7 @@
   "author": "Jose-Luis Landabaso",
   "note-on-dependecies": "@noble/hashes, create-hash and randombytes are explicitly added to address an issue in CodeSandbox where it's unable to resolve the environment correctly. CodeSandbox should be identifying a browser environment and selecting the appropriate random system functions, rather than defaulting to Node.js ones.",
   "dependencies": {
-    "@bitcoinerlab/descriptors": "^2.3.4",
+    "@bitcoinerlab/descriptors": "^2.3.6",
     "@bitcoinerlab/explorer": "^0.4.2",
     "@bitcoinerlab/miniscript": "^1.4.3",
     "@bitcoinerlab/secp256k1": "^1.2.0",
@@ -41,6 +42,7 @@
     "rm descriptors/legacy2segwit/package.json",
     "rm descriptors/miniscript/package.json",
     "rm descriptors/p2a/package.json",
+    "rm descriptors/inscriptions/package.json",
     "rm descriptors/rewind2/package.json",
     "",
     "ln package.json descriptors/ledger/package.json",
@@ -49,6 +51,7 @@
     "ln package.json descriptors/legacy2segwit/package.json",
     "ln package.json descriptors/miniscript/package.json",
     "ln package.json descriptors/p2a/package.json",
+    "ln package.json descriptors/inscriptions/package.json",
     "ln package.json descriptors/rewind2/package.json",
     "",
     "Same applies to the codesandboxFixes.ts file.",

@@ -83,11 +83,12 @@ Learn how to construct a **P2A (Pay-to-Anchor)** output and how these outputs ar
 ```bash
 npm run descriptors/p2a
 
+### `descriptors/inscriptions`
+
+```bash
+npm run descriptors/inscriptions
+
 ### `descriptors/rewind2`
-
-**Guide**: [https://bitcoinerlab.com/guides/rewind2](https://bitcoinerlab.com/guides/rewind2)
-
-Learn about the new generation of vaults using on-chain inscriptions for backups.
 
 ```bash
 npm run descriptors/rewind2

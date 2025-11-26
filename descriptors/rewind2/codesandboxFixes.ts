@@ -33,6 +33,7 @@
  rm descriptors/multisig-fallback-timelock/codesandboxFixes.ts
  rm descriptors/p2a/codesandboxFixes.ts
  rm descriptors/rewind2/codesandboxFixes.ts
+ rm descriptors/inscriptions/codesandboxFixes.ts
 
  ln descriptors/codesandboxFixes.ts descriptors/ledger/codesandboxFixes.ts
  ln descriptors/codesandboxFixes.ts descriptors/legacy2segwit/codesandboxFixes.ts
@@ -41,6 +42,7 @@
  ln descriptors/codesandboxFixes.ts descriptors/multisig-fallback-timelock/codesandboxFixes.ts
  ln descriptors/codesandboxFixes.ts descriptors/p2a/codesandboxFixes.ts
  ln descriptors/codesandboxFixes.ts descriptors/rewind2/codesandboxFixes.ts
+ ln descriptors/codesandboxFixes.ts descriptors/inscriptions/codesandboxFixes.ts
 
  */
 
