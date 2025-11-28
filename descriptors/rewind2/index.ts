@@ -15,6 +15,9 @@ import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { EsploraExplorer } from '@bitcoinerlab/explorer';
 import { InscriptionsFactory } from './inscriptions';
 
+const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
+const LOCK_BLOCKS = 2;
+
 const isWeb = typeof window !== 'undefined';
 const Log = (message: string) => {
   const logsElement = isWeb && document.getElementById('logs');
@@ -32,10 +35,35 @@ const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
 const explorer = new EsploraExplorer({ url: ESPLORA_API });
 const { wpkhBIP32 } = descriptors.scriptExpressions;
-const { Output, BIP32, ECPair } = descriptors.DescriptorsFactory(secp256k1);
+const { Output, BIP32, ECPair, parseKeyExpression } =
+  descriptors.DescriptorsFactory(secp256k1);
 const { Inscription } = InscriptionsFactory(secp256k1);
 const network = networks.regtest;
 const FEE = 500;
+
+const { encode: olderEncode } = require('bip68');
+import { compilePolicy } from '@bitcoinerlab/miniscript';
+
+export const createTriggerDescriptor = ({
+  unvaultKey,
+  panicKey,
+  lockBlocks
+}: {
+  unvaultKey: string;
+  panicKey: string;
+  lockBlocks: number;
+}) => {
+  const POLICY = (older: number) =>
+    `or(pk(@panicKey),99@and(pk(@unvaultKey),older(${older})))`;
+  const older = olderEncode({ blocks: lockBlocks });
+  const { miniscript, issane } = compilePolicy(POLICY(older));
+  if (!issane) throw new Error('Policy not sane');
+
+  const triggerDescriptor = `wsh(${miniscript
+    .replace('@unvaultKey', unvaultKey)
+    .replace('@panicKey', panicKey)})`;
+  return triggerDescriptor;
+};
 
 const start = async () => {
   let mnemonic; //Let's create a basic wallet:
@@ -59,26 +87,26 @@ ${mnemonic}
 ⚠️ Save it only if you want. This is the TAPE testnet. 
 Every reload reuses the same mnemonic for convenience.`);
   const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
-  const sourceOutput = new Output({
+  const walletUTXO = new Output({
     descriptor: wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/0' }),
     network
   });
-  const sourceAddress = sourceOutput.getAddress();
+  const walletAddress = walletUTXO.getAddress();
   Log(
-    `📫 Source address: <a href="${EXPLORER}/${sourceAddress}" target="_blank">${sourceAddress}</a>`
+    `📫 Wallet address: <a href="${EXPLORER}/${walletAddress}" target="_blank">${walletAddress}</a>`
   );
 
   // Check if the wallet already has confirmed funds
   Log(`🔍 Checking existing balance...`);
-  const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
-  Log(`🔍 Wallet balance info: ${JSONf(sourceAddressInfo)}`);
-  let fundingtTxId;
+  const walletAddressInfo = await explorer.fetchAddress(walletAddress);
+  Log(`🔍 Wallet balance info: ${JSONf(walletAddressInfo)}`);
+  let walletPrevTxId;
 
-  if (sourceAddressInfo.balance + sourceAddressInfo.unconfirmedBalance < FEE) {
+  if (walletAddressInfo.balance + walletAddressInfo.unconfirmedBalance < FEE) {
     Log(`💰 The wallet is empty. Let's request some funds...`);
     //New or empty wallet. Let's prepare the faucet request:
     const formData = new URLSearchParams();
-    formData.append('address', sourceAddress);
+    formData.append('address', walletAddress);
     const faucetRes = await fetch(FAUCET_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -95,55 +123,103 @@ Every reload reuses the same mnemonic for convenience.`);
         `Faucet rate-limit: this address has already received sats recently.
 Please retry (max 2 faucet requests per IP/address per minute).`
       );
-    fundingtTxId = faucetJson.txId;
+    walletPrevTxId = faucetJson.txId;
   } else {
     Log(`💰 Existing balance detected. Skipping faucet.`);
     // Wallet has funds. Find the last transaction that actually pays to this script.
-    const txHistory = await explorer.fetchTxHistory({ address: sourceAddress });
-    const spkHex = sourceOutput.getScriptPubKey().toString('hex');
+    const txHistory = await explorer.fetchTxHistory({ address: walletAddress });
+    const spkHex = walletUTXO.getScriptPubKey().toString('hex');
 
     for (const { txId } of txHistory.reverse()) {
       const tx = Transaction.fromHex(await explorer.fetchTx(txId));
       const vout = tx.outs.findIndex(o => o.script.toString('hex') === spkHex);
       if (vout !== -1) {
-        fundingtTxId = txId;
+        walletPrevTxId = txId;
         break;
       }
     }
   }
 
-  let fundingTxHex = '';
+  let walletPrevTxHex = '';
   while (true) {
     // Ping the esplora for the txHex (may need to wait until the tx is indexed)
     try {
-      fundingTxHex = await explorer.fetchTx(fundingtTxId);
+      walletPrevTxHex = await explorer.fetchTx(walletPrevTxId);
       break;
     } catch (err) {
       void err;
       Log(
-        `⏳ Waiting for the funding tx <a href="${EXPLORER}/${fundingtTxId}" target="_blank">${fundingtTxId}</a> to be indexed...`
+        `⏳ Waiting for the walletPrev tx <a href="${EXPLORER}/${walletPrevTxId}" target="_blank">${walletPrevTxId}</a> to be indexed...`
       );
     }
     await new Promise(r => setTimeout(r, 1000)); //sleep 1s
   }
 
-  const fundingTransaction = Transaction.fromHex(fundingTxHex);
-  const fundingVout = fundingTransaction.outs.findIndex(
+  const walletPrevTransaction = Transaction.fromHex(walletPrevTxHex);
+  const walletPrevVout = walletPrevTransaction.outs.findIndex(
     txOut =>
       txOut.script.toString('hex') ===
-      sourceOutput.getScriptPubKey().toString('hex')
+      walletUTXO.getScriptPubKey().toString('hex')
   );
-  if (!fundingTransaction.outs[fundingVout]) throw new Error('Invalid vout');
+  if (!walletPrevTransaction.outs[walletPrevVout])
+    throw new Error('Invalid vout');
 
-  const sourceValue = fundingTransaction.outs[fundingVout].value;
-  Log(`💎 Initial value (sats): ${sourceValue}`);
+  const walletBalance = walletPrevTransaction.outs[walletPrevVout].value;
+  Log(`💎 Wallet balance (sats): ${walletBalance}`);
 
-  const vaultPair = ECPair.makeRandom();
+  const randomPair = ECPair.makeRandom();
+  const randomPubKey = randomPair.publicKey;
   const vaultOutput = new Inscription({
-    contentType: 'application/vnd.rewindbitcoin;readme=inscription:123456',
+    contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
     content: Buffer.from('Hello world!'),
-    internalPubKey: vaultPair.publicKey,
+    internalPubKey: randomPubKey,
     network
+  });
+  const psbtVault = new Psbt({ network });
+  const vaultFinalizer = walletUTXO.updatePsbtAsInput({
+    psbt: psbtVault,
+    txHex: walletPrevTxHex,
+    vout: walletPrevVout
+  });
+  descriptors.signers.signBIP32({ psbt: psbtVault, masterNode });
+  vaultFinalizer({ psbt: psbtVault });
+  const vaultedAmount = walletBalance - FEE;
+  vaultOutput.updatePsbtAsOutput({
+    psbt: psbtVault,
+    value: vaultedAmount
+  });
+
+  // Trigger:
+  const unvaultKey = descriptors.keyExpressionBIP32({
+    masterNode,
+    originPath: "/0'",
+    keyPath: '/0'
+  });
+  const triggerDescriptor = createTriggerDescriptor({
+    unvaultKey,
+    panicKey: randomPubKey.toString('hex'),
+    lockBlocks: LOCK_BLOCKS
+  });
+  const triggerOutput = new Output({
+    descriptor: triggerDescriptor,
+    network
+  });
+  const triggerOutputPanicPath = new Output({
+    descriptor: triggerDescriptor,
+    network,
+    signersPubKeys: [randomPubKey]
+  });
+  const { pubkey: unvaultPubKey } = parseKeyExpression({
+    keyExpression: unvaultKey,
+    network
+  });
+  if (!unvaultPubKey) throw new Error('Could not extract unvaultPubKey');
+  const psbtTriggerBase = new Psbt({ network });
+  //Add the input (vaultOutput) to psbtTrigger as input:
+  const triggerInputFinalizer = vaultOutput.updatePsbtAsInput({
+    psbt: psbtTriggerBase,
+    txHex: vaultTxHex,
+    vout: 0
   });
 
   // Create destination address (account 1)
@@ -151,14 +227,13 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     descriptor: wpkhBIP32({ masterNode, network, account: 1, keyPath: '/0/0' }),
     network
   });
-  const destValue = sourceValue; // Look ma! no fee!!
-
+  const destValue = walletBalance;
   const parentPsbt = new Psbt({ network });
   parentPsbt.setVersion(3);
-  const parentInputFinalizer = sourceOutput.updatePsbtAsInput({
+  const parentInputFinalizer = walletUTXO.updatePsbtAsInput({
     psbt: parentPsbt,
-    vout: fundingVout,
-    txHex: fundingTxHex
+    vout: walletPrevVout,
+    txHex: walletPrevTxHex
   });
   parentPsbt.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
   destOutput.updatePsbtAsOutput({ psbt: parentPsbt, value: destValue }); //vout: 1
@@ -187,8 +262,8 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     vout: 1,
     txHex: parentTransaction.toHex()
   });
-  //give back the money to ourselves
-  sourceOutput.updatePsbtAsOutput({ psbt: childPsbt, value: destValue - FEE });
+  //give back the money to ourselves.
+  walletUTXO.updatePsbtAsOutput({ psbt: childPsbt, value: destValue - FEE });
   descriptors.signers.signBIP32({ psbt: childPsbt, masterNode });
   childInputFinalizer({ psbt: childPsbt });
 
