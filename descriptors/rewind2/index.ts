@@ -30,6 +30,7 @@ const Log = (message: string) => {
 //JSON to pretty-string format:
 const JSONf = (json: object) => JSON.stringify(json, null, '\t');
 
+const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 const EXPLORER = `https://tape.rewindbitcoin.com/explorer`;
 const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
@@ -41,7 +42,8 @@ const { Inscription } = InscriptionsFactory(secp256k1);
 const network = networks.regtest;
 const FEE = 500;
 
-const { encode: olderEncode } = require('bip68');
+// @ts-ignore
+import { encode as olderEncode } from 'bip68';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
 
 export const createTriggerDescriptor = ({
@@ -67,26 +69,39 @@ export const createTriggerDescriptor = ({
 
 const start = async () => {
   let mnemonic; //Let's create a basic wallet:
+  let coldMnemonic; //Let's create a cold wallet (emergency):
   if (isWeb) {
-    mnemonic = localStorage.getItem('p2amnemonic');
-    if (!mnemonic) {
+    mnemonic = localStorage.getItem('rew2mnemonic');
+    coldMnemonic = localStorage.getItem('rew2coldmnemonic');
+    if (!mnemonic || !coldMnemonic) {
       mnemonic = generateMnemonic();
-      localStorage.setItem('p2amnemonic', mnemonic);
+      localStorage.setItem('rew2mnemonic', mnemonic);
+      coldMnemonic = generateMnemonic();
+      localStorage.setItem('rew2coldmnemonic', coldMnemonic);
     }
   } else {
     try {
-      mnemonic = readFileSync('.p2amnemonic', 'utf8');
+      mnemonic = readFileSync('.rew2mnemonic', 'utf8');
+      coldMnemonic = readFileSync('.rew2coldmnemonic', 'utf8');
     } catch {
       mnemonic = generateMnemonic();
-      writeFileSync('.p2amnemonic', mnemonic);
+      writeFileSync('.rew2mnemonic', mnemonic);
+      coldMnemonic = generateMnemonic();
+      writeFileSync('.rew2coldmnemonic', coldMnemonic);
     }
   }
   Log(`🔐 This is your demo wallet (mnemonic):
 ${mnemonic}
+And this is your emergency mnemonic:
+${coldMnemonic}
 
 ⚠️ Save it only if you want. This is the TAPE testnet. 
 Every reload reuses the same mnemonic for convenience.`);
   const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
+  const coldMasterNode = BIP32.fromSeed(
+    mnemonicToSeedSync(coldMnemonic),
+    network
+  );
   const walletUTXO = new Output({
     descriptor: wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/0' }),
     network
@@ -169,57 +184,137 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const randomPair = ECPair.makeRandom();
   const randomPubKey = randomPair.publicKey;
-  const vaultOutput = new Inscription({
-    contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
-    content: Buffer.from('Hello world!'),
-    internalPubKey: randomPubKey,
-    network
-  });
-  const psbtVault = new Psbt({ network });
-  const vaultFinalizer = walletUTXO.updatePsbtAsInput({
-    psbt: psbtVault,
-    txHex: walletPrevTxHex,
-    vout: walletPrevVout
-  });
-  descriptors.signers.signBIP32({ psbt: psbtVault, masterNode });
-  vaultFinalizer({ psbt: psbtVault });
-  const vaultedAmount = walletBalance - FEE;
-  vaultOutput.updatePsbtAsOutput({
-    psbt: psbtVault,
-    value: vaultedAmount
-  });
 
-  // Trigger:
-  const unvaultKey = descriptors.keyExpressionBIP32({
-    masterNode,
-    originPath: "/0'",
-    keyPath: '/0'
+  const createPsbtChain = (content: Buffer) => {
+    const vaultOutput = new Inscription({
+      contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
+      content,
+      internalPubKey: randomPubKey,
+      network
+    });
+    console.log(`Vault address: ${vaultOutput.getAddress()}`);
+    const psbtVault = new Psbt({ network });
+    const vaultFinalizer = walletUTXO.updatePsbtAsInput({
+      psbt: psbtVault,
+      txHex: walletPrevTxHex,
+      vout: walletPrevVout
+    });
+    descriptors.signers.signBIP32({ psbt: psbtVault, masterNode });
+    vaultFinalizer({ psbt: psbtVault });
+    const vaultedAmount = walletBalance - FEE;
+    vaultOutput.updatePsbtAsOutput({
+      psbt: psbtVault,
+      value: vaultedAmount
+    });
+
+    //////////////////////
+    // Trigger:
+    //////////////////////
+    const unvaultKey = descriptors.keyExpressionBIP32({
+      masterNode,
+      originPath: "/0'",
+      keyPath: '/0'
+    });
+    const triggerDescriptor = createTriggerDescriptor({
+      unvaultKey,
+      panicKey: randomPubKey.toString('hex'),
+      lockBlocks: LOCK_BLOCKS
+    });
+    const triggerOutputPanicPath = new Output({
+      descriptor: triggerDescriptor,
+      network,
+      signersPubKeys: [randomPubKey]
+    });
+    const { pubkey: unvaultPubKey } = parseKeyExpression({
+      keyExpression: unvaultKey,
+      network
+    });
+    if (!unvaultPubKey) throw new Error('Could not extract unvaultPubKey');
+
+    const psbtTrigger = new Psbt({ network });
+    psbtTrigger.setVersion(3);
+    //Add the input (vaultOutput) to psbtTrigger as input:
+    const triggerInputFinalizer = vaultOutput.updatePsbtAsInput({
+      psbt: psbtTrigger,
+      txHex: psbtVault.extractTransaction().toHex(),
+      vout: 0
+    });
+    psbtTrigger.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
+    triggerOutputPanicPath.updatePsbtAsOutput({
+      psbt: psbtTrigger,
+      value: vaultedAmount //zero fee
+    }); //vout: 1
+    descriptors.signers.signECPair({ psbt: psbtTrigger, ecpair: randomPair });
+    triggerInputFinalizer({ psbt: psbtTrigger });
+
+    //////////////////////
+    // Panic:
+    //////////////////////
+
+    const psbtPanic = new Psbt({ network });
+    psbtPanic.setVersion(3);
+    psbtPanic.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
+    const panicInputFinalizer = triggerOutputPanicPath.updatePsbtAsInput({
+      psbt: psbtPanic,
+      txHex: psbtTrigger.extractTransaction().toHex(),
+      vout: 1
+    });
+    const coldOutput = new Output({
+      descriptor: wpkhBIP32({
+        masterNode: coldMasterNode,
+        network,
+        account: 1,
+        keyPath: '/0/0'
+      }),
+      network
+    });
+    coldOutput.updatePsbtAsOutput({ psbt: psbtPanic, value: vaultedAmount });
+    descriptors.signers.signECPair({ psbt: psbtPanic, ecpair: randomPair });
+    panicInputFinalizer({ psbt: psbtPanic });
+
+    return { psbtVault, psbtTrigger, psbtPanic };
+  };
+
+  const psbtChainNoContent = createPsbtChain(
+    Buffer.from(crypto.getRandomValues(new Uint8Array(400)))
+  );
+  //TODO: here below we will need to input the real trigger + panic txs
+  const psbtChain = createPsbtChain(
+    Buffer.from(crypto.getRandomValues(new Uint8Array(400)))
+  );
+
+  console.log(`
+
+vault no content id: ${psbtChainNoContent.psbtVault.extractTransaction().getId()}
+vault id: ${psbtChain.psbtVault.extractTransaction().getId()}
+
+trigger no content id: ${psbtChainNoContent.psbtTrigger.extractTransaction().getId()}
+trigger id: ${psbtChain.psbtTrigger.extractTransaction().getId()}
+
+`);
+
+  /*
+  ///////////
+  ///////////
+  ///////////
+  ///////////
+  ///////////
+  //We need to fee bump it later:
+  const psbtTriggerFeeBump = new Psbt({ network });
+  psbtTriggerFeeBump.setVersion(3);
+  psbtTriggerFeeBump.addInput({
+    hash: psbtTrigger.extractTransaction().getId(),
+    index: 0,
+    witnessUtxo: { script: P2A_SCRIPT, value: 0 }
   });
-  const triggerDescriptor = createTriggerDescriptor({
-    unvaultKey,
-    panicKey: randomPubKey.toString('hex'),
-    lockBlocks: LOCK_BLOCKS
-  });
-  const triggerOutput = new Output({
-    descriptor: triggerDescriptor,
-    network
-  });
-  const triggerOutputPanicPath = new Output({
-    descriptor: triggerDescriptor,
-    network,
-    signersPubKeys: [randomPubKey]
-  });
-  const { pubkey: unvaultPubKey } = parseKeyExpression({
-    keyExpression: unvaultKey,
-    network
-  });
-  if (!unvaultPubKey) throw new Error('Could not extract unvaultPubKey');
-  const psbtTriggerBase = new Psbt({ network });
-  //Add the input (vaultOutput) to psbtTrigger as input:
-  const triggerInputFinalizer = vaultOutput.updatePsbtAsInput({
-    psbt: psbtTriggerBase,
-    txHex: vaultTxHex,
-    vout: 0
+  psbtTriggerFeeBump.finalizeInput(0, () => ({
+    finalScriptSig: Buffer.alloc(0),
+    finalScriptWitness: Buffer.from([0x00]) // empty item
+  }));
+  const triggerFeeBumpFinalizer = destOutput.updatePsbtAsInput({
+    psbt: childPsbt,
+    vout: 1,
+    txHex: parentTransaction.toHex()
   });
 
   // Create destination address (account 1)
@@ -299,6 +394,7 @@ Bitcoin Core will validate them together as a 1P1C package.`);
 👶 Child tx (pays the actual fee):
   <a href="${EXPLORER}/${childTransaction.getId()}" target="_blank">${childTransaction.getId()}</a>
 `);
+  */
 };
 if (isWeb) (window as unknown as { start: typeof start }).start = start;
 
