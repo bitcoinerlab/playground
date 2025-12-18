@@ -36,7 +36,7 @@ const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
 const explorer = new EsploraExplorer({ url: ESPLORA_API });
 const { wpkhBIP32 } = descriptors.scriptExpressions;
-const { Output, BIP32, ECPair, parseKeyExpression } =
+const { Output, BIP32, parseKeyExpression } =
   descriptors.DescriptorsFactory(secp256k1);
 const { Inscription } = InscriptionsFactory(secp256k1);
 const network = networks.regtest;
@@ -69,37 +69,37 @@ export const createTriggerDescriptor = ({
 
 const start = async () => {
   let mnemonic; //Let's create a basic wallet:
-  let coldMnemonic; //Let's create a cold wallet (emergency):
+  let emergencyMnemonic; //Let's create a cold wallet (emergency):
   if (isWeb) {
     mnemonic = localStorage.getItem('rew2mnemonic');
-    coldMnemonic = localStorage.getItem('rew2coldmnemonic');
-    if (!mnemonic || !coldMnemonic) {
+    emergencyMnemonic = localStorage.getItem('rew2coldmnemonic');
+    if (!mnemonic || !emergencyMnemonic) {
       mnemonic = generateMnemonic();
       localStorage.setItem('rew2mnemonic', mnemonic);
-      coldMnemonic = generateMnemonic();
-      localStorage.setItem('rew2coldmnemonic', coldMnemonic);
+      emergencyMnemonic = generateMnemonic();
+      localStorage.setItem('rew2coldmnemonic', emergencyMnemonic);
     }
   } else {
     try {
       mnemonic = readFileSync('.rew2mnemonic', 'utf8');
-      coldMnemonic = readFileSync('.rew2coldmnemonic', 'utf8');
+      emergencyMnemonic = readFileSync('.rew2coldmnemonic', 'utf8');
     } catch {
       mnemonic = generateMnemonic();
       writeFileSync('.rew2mnemonic', mnemonic);
-      coldMnemonic = generateMnemonic();
-      writeFileSync('.rew2coldmnemonic', coldMnemonic);
+      emergencyMnemonic = generateMnemonic();
+      writeFileSync('.rew2coldmnemonic', emergencyMnemonic);
     }
   }
   Log(`🔐 This is your demo wallet (mnemonic):
 ${mnemonic}
 And this is your emergency mnemonic:
-${coldMnemonic}
+${emergencyMnemonic}
 
 ⚠️ Save it only if you want. This is the TAPE testnet. 
 Every reload reuses the same mnemonic for convenience.`);
   const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
-  const coldMasterNode = BIP32.fromSeed(
-    mnemonicToSeedSync(coldMnemonic),
+  const emergencyMasterNode = BIP32.fromSeed(
+    mnemonicToSeedSync(emergencyMnemonic),
     network
   );
   const walletUTXO = new Output({
@@ -182,14 +182,26 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   const walletBalance = walletPrevTransaction.outs[walletPrevVout].value;
   Log(`💎 Wallet balance (sats): ${walletBalance}`);
 
-  const randomPair = ECPair.makeRandom();
-  const randomPubKey = randomPair.publicKey;
+  const randomMnemonic = generateMnemonic();
 
-  const createPsbtChain = (content: Buffer) => {
-    const vaultOutput = new Inscription({
-      contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
-      content,
-      internalPubKey: randomPubKey,
+  const randomMasterNode = BIP32.fromSeed(
+    mnemonicToSeedSync(randomMnemonic),
+    network
+  );
+  const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`;
+  const randomKeyPath = `/0/0`;
+  const randomKey = descriptors.keyExpressionBIP32({
+    masterNode: randomMasterNode,
+    originPath: randomOriginPath,
+    keyPath: randomKeyPath
+  });
+  const randomPubKey = randomMasterNode.derivePath(
+    `m${randomOriginPath}${randomKeyPath}`
+  ).publicKey;
+
+  const createVaultChain = () => {
+    const vaultOutput = new Output({
+      descriptor: `wpkh(${randomKey})`,
       network
     });
     console.log(`Vault address: ${vaultOutput.getAddress()}`);
@@ -199,13 +211,13 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       txHex: walletPrevTxHex,
       vout: walletPrevVout
     });
-    descriptors.signers.signBIP32({ psbt: psbtVault, masterNode });
-    vaultFinalizer({ psbt: psbtVault });
     const vaultedAmount = walletBalance - FEE;
     vaultOutput.updatePsbtAsOutput({
       psbt: psbtVault,
       value: vaultedAmount
     });
+    descriptors.signers.signBIP32({ psbt: psbtVault, masterNode });
+    vaultFinalizer({ psbt: psbtVault });
 
     //////////////////////
     // Trigger:
@@ -215,9 +227,10 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       originPath: "/0'",
       keyPath: '/0'
     });
+    const panicKey = randomKey;
     const triggerDescriptor = createTriggerDescriptor({
       unvaultKey,
-      panicKey: randomPubKey.toString('hex'),
+      panicKey,
       lockBlocks: LOCK_BLOCKS
     });
     const triggerOutputPanicPath = new Output({
@@ -244,7 +257,10 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       psbt: psbtTrigger,
       value: vaultedAmount //zero fee
     }); //vout: 1
-    descriptors.signers.signECPair({ psbt: psbtTrigger, ecpair: randomPair });
+    descriptors.signers.signBIP32({
+      psbt: psbtTrigger,
+      masterNode: randomMasterNode
+    });
     triggerInputFinalizer({ psbt: psbtTrigger });
 
     //////////////////////
@@ -261,7 +277,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     });
     const coldOutput = new Output({
       descriptor: wpkhBIP32({
-        masterNode: coldMasterNode,
+        masterNode: emergencyMasterNode,
         network,
         account: 1,
         keyPath: '/0/0'
@@ -269,28 +285,29 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       network
     });
     coldOutput.updatePsbtAsOutput({ psbt: psbtPanic, value: vaultedAmount });
-    descriptors.signers.signECPair({ psbt: psbtPanic, ecpair: randomPair });
+    descriptors.signers.signBIP32({
+      psbt: psbtPanic,
+      masterNode: randomMasterNode
+    });
     panicInputFinalizer({ psbt: psbtPanic });
 
     return { psbtVault, psbtTrigger, psbtPanic };
   };
 
-  const psbtChainNoContent = createPsbtChain(
-    Buffer.from(crypto.getRandomValues(new Uint8Array(400)))
-  );
-  //TODO: here below we will need to input the real trigger + panic txs
-  const psbtChain = createPsbtChain(
-    Buffer.from(crypto.getRandomValues(new Uint8Array(400)))
-  );
+  const vaultChain = createVaultChain();
+  //const backupChain = createBackupChain();//TODO:
+
+  const backupOutput = new Inscription({
+    contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
+    content: Buffer.from(crypto.getRandomValues(new Uint8Array(400))),
+    internalPubKey: randomPubKey,
+    network
+  });
+  void backupOutput; //TODO:
 
   console.log(`
-
-vault no content id: ${psbtChainNoContent.psbtVault.extractTransaction().getId()}
-vault id: ${psbtChain.psbtVault.extractTransaction().getId()}
-
-trigger no content id: ${psbtChainNoContent.psbtTrigger.extractTransaction().getId()}
-trigger id: ${psbtChain.psbtTrigger.extractTransaction().getId()}
-
+vault id: ${vaultChain.psbtVault.extractTransaction().getId()}
+trigger id: ${vaultChain.psbtTrigger.extractTransaction().getId()}
 `);
 
   /*
