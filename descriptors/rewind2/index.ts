@@ -211,11 +211,13 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       txHex: walletPrevTxHex,
       vout: walletPrevVout
     });
-    const vaultedAmount = walletBalance - FEE;
+    const backupFunding = 1500;
+    const vaultedAmount = walletBalance - FEE - backupFunding;
     vaultOutput.updatePsbtAsOutput({
       psbt: psbtVault,
       value: vaultedAmount
     });
+    walletUTXO.updatePsbtAsOutput({ psbt: psbtVault, value: backupFunding });
     descriptors.signers.signBIP32({ psbt: psbtVault, masterNode });
     vaultFinalizer({ psbt: psbtVault });
 
@@ -295,19 +297,81 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   };
 
   const vaultChain = createVaultChain();
-  //const backupChain = createBackupChain();//TODO:
 
-  const backupOutput = new Inscription({
-    contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
-    content: Buffer.from(crypto.getRandomValues(new Uint8Array(400))),
-    internalPubKey: randomPubKey,
-    network
+  const createBackupChain = ({
+    psbtTrigger,
+    psbtPanic,
+    fundingTxHex,
+    fundingVout
+  }: {
+    psbtTrigger: Psbt;
+    psbtPanic: Psbt;
+    fundingTxHex: string;
+    fundingVout: number;
+  }) => {
+    const txTrigger = psbtTrigger.extractTransaction().toBuffer();
+    const txPanic = psbtPanic.extractTransaction().toBuffer();
+    const content = Buffer.concat([txTrigger, txPanic]);
+
+    const backupInscription = new Inscription({
+      contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
+      content,
+      bip32Derivation: {
+        masterFingerprint: randomMasterNode.fingerprint,
+        path: `m${randomOriginPath}${randomKeyPath}`,
+        pubkey: randomPubKey
+      },
+      network
+    });
+
+    const psbtCommit = new Psbt({ network });
+    psbtCommit.setVersion(3);
+    const commitInputFinalizer = walletUTXO.updatePsbtAsInput({
+      psbt: psbtCommit,
+      txHex: fundingTxHex,
+      vout: fundingVout
+    });
+    const inscriptionValue = 1000;
+    backupInscription.updatePsbtAsOutput({
+      psbt: psbtCommit,
+      value: inscriptionValue
+    });
+    descriptors.signers.signBIP32({ psbt: psbtCommit, masterNode });
+    commitInputFinalizer({ psbt: psbtCommit });
+
+    const psbtReveal = new Psbt({ network });
+    psbtReveal.setVersion(3);
+    const revealInputFinalizer = backupInscription.updatePsbtAsInput({
+      psbt: psbtReveal,
+      txHex: psbtCommit.extractTransaction().toHex(),
+      vout: 0
+    });
+    psbtReveal.addOutput({ script: P2A_SCRIPT, value: 0 });
+    walletUTXO.updatePsbtAsOutput({
+      psbt: psbtReveal,
+      value: inscriptionValue - FEE
+    });
+    descriptors.signers.signBIP32({
+      psbt: psbtReveal,
+      masterNode: randomMasterNode
+    });
+    revealInputFinalizer({ psbt: psbtReveal });
+
+    return { psbtCommit, psbtReveal };
+  };
+
+  const backupChain = createBackupChain({
+    psbtTrigger: vaultChain.psbtTrigger,
+    psbtPanic: vaultChain.psbtPanic,
+    fundingTxHex: vaultChain.psbtVault.extractTransaction().toHex(),
+    fundingVout: 1
   });
-  void backupOutput; //TODO:
 
   console.log(`
 vault id: ${vaultChain.psbtVault.extractTransaction().getId()}
 trigger id: ${vaultChain.psbtTrigger.extractTransaction().getId()}
+commit id: ${backupChain.psbtCommit.extractTransaction().getId()}
+reveal id: ${backupChain.psbtReveal.extractTransaction().getId()}
 `);
 
   /*
