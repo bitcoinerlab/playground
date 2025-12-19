@@ -20,6 +20,9 @@ import type { BIP32Interface } from 'bip32';
 
 const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
 const LOCK_BLOCKS = 2;
+const FEE = 500; //FIXME: dynamic
+const BACKUP_FUNDING = 1500; //FIXME: dynamic
+//FIXME: this still needs a mechanism to keep some margin for not to spend from the wallet: the max expected fee in future for (trigger+panic) x nActiveVaults
 
 const isWeb = typeof window !== 'undefined';
 const Log = (message: string) => {
@@ -43,8 +46,6 @@ const { Output, BIP32, parseKeyExpression } =
   descriptors.DescriptorsFactory(secp256k1);
 const { Inscription } = InscriptionsFactory(secp256k1);
 const network = networks.regtest;
-const FEE = 500;
-const BACKUP_FUNDING = 1500;
 
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
@@ -59,7 +60,6 @@ const getBackupPath = (network: Network, index: number): string => {
  * Serializes a single vault entry into RAF v1 TLV format.
  * Format: [Type 0x01][PayloadLen][VaultTxId][TriggerLen][Trigger][PanicLen][Panic][TagLen][Tag]
  */
-
 const serializeVaultEntry = ({
   vaultTxId,
   triggerTx,
@@ -346,10 +346,13 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     return { psbtVault, psbtTrigger, psbtPanic };
   };
 
-  const getNextBackupIndex = async (
-    masterNode: BIP32Interface,
-    network: Network
-  ): Promise<number> => {
+  const getNextBackupIndex = async ({
+    masterNode,
+    network
+  }: {
+    masterNode: BIP32Interface;
+    network: Network;
+  }): Promise<number> => {
     let index = 0;
     while (true) {
       const path = getBackupPath(network, index);
@@ -375,7 +378,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   };
 
   const createBackupChain = ({
-    index,
+    backupIndex,
     psbtTrigger,
     psbtPanic,
     psbtVault,
@@ -383,7 +386,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     fundingVout,
     tag
   }: {
-    index: number;
+    backupIndex: number;
     psbtTrigger: Psbt;
     psbtPanic: Psbt;
     psbtVault: Psbt;
@@ -404,7 +407,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     const header = Buffer.from('REW\x01'); // Magic + Version 1
     const content = Buffer.concat([header, entry]);
 
-    const backupPath = getBackupPath(network, index);
+    const backupPath = getBackupPath(network, backupIndex);
     const backupNode = masterNode.derivePath(backupPath);
 
     const backupInscription = new Inscription({
@@ -453,10 +456,10 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const vaultChain = createVaultChain();
 
-  const backupIndex = await getNextBackupIndex(masterNode, network);
+  const backupIndex = await getNextBackupIndex({ masterNode, network });
   console.log(`Backup index tip: ${backupIndex}`);
   const backupChain = createBackupChain({
-    index: backupIndex,
+    backupIndex,
     psbtTrigger: vaultChain.psbtTrigger,
     psbtPanic: vaultChain.psbtPanic,
     psbtVault: vaultChain.psbtVault,
