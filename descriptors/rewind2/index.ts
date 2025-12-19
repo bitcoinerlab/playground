@@ -50,6 +50,11 @@ const BACKUP_FUNDING = 1500;
 import { encode as olderEncode } from 'bip68';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
 
+const getBackupPath = (network: Network, index: number): string => {
+  const coinType = network === networks.bitcoin ? "0'" : "1'";
+  return `m/86'/${coinType}/0'/9/${index}`;
+};
+
 /**
  * Serializes a single vault entry into RAF v1 TLV format.
  * Format: [Type 0x01][PayloadLen][VaultTxId][TriggerLen][Trigger][PanicLen][Panic][TagLen][Tag]
@@ -345,10 +350,9 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     masterNode: BIP32Interface,
     network: Network
   ): Promise<number> => {
-    const coinType = network === networks.bitcoin ? "0'" : "1'";
     let index = 0;
     while (true) {
-      const path = `m/86'/${coinType}/0'/9/${index}`;
+      const path = getBackupPath(network, index);
       const pubkey = masterNode.derivePath(path).publicKey;
 
       // Predictable BIP86 address (Key-path spend)
@@ -400,10 +404,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     const header = Buffer.from('REW\x01'); // Magic + Version 1
     const content = Buffer.concat([header, entry]);
 
-    // Backup derivation path: m/86'/{coin_type}'/0'/9/{index}
-    const coinType = network === networks.bitcoin ? "0'" : "1'";
-    const backupIndex = index;
-    const backupPath = `m/86'/${coinType}/0'/9/${backupIndex}`;
+    const backupPath = getBackupPath(network, index);
     const backupNode = masterNode.derivePath(backupPath);
 
     const backupInscription = new Inscription({
