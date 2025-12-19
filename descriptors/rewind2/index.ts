@@ -50,6 +50,7 @@ const network = networks.regtest;
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
+import type { Output } from 'bitcoinjs-lib/src/transaction';
 
 const getBackupPath = (network: Network, index: number): string => {
   const coinType = network === networks.bitcoin ? "0'" : "1'";
@@ -96,7 +97,7 @@ const serializeVaultEntry = ({
   ]);
 };
 
-export const createTriggerDescriptor = ({
+const createTriggerDescriptor = ({
   unvaultKey,
   panicKey,
   lockBlocks
@@ -115,6 +116,248 @@ export const createTriggerDescriptor = ({
     .replace('@unvaultKey', unvaultKey)
     .replace('@panicKey', panicKey)})`;
   return triggerDescriptor;
+};
+
+const createVaultChain = ({
+  walletUTXO,
+  walletPrevTxHex,
+  masterNode,
+  coldAddress
+}: {
+  walletUTXO: descriptors.OutputInstance;
+  walletPrevTxHex: string;
+  masterNode: BIP32Interface;
+  coldAddress: string;
+}) => {
+  const randomMnemonic = generateMnemonic();
+
+  const randomMasterNode = BIP32.fromSeed(
+    mnemonicToSeedSync(randomMnemonic),
+    network
+  );
+  const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`;
+  const randomKeyPath = `/0/0`;
+  const randomKey = descriptors.keyExpressionBIP32({
+    masterNode: randomMasterNode,
+    originPath: randomOriginPath,
+    keyPath: randomKeyPath
+  });
+  const randomPubKey = randomMasterNode.derivePath(
+    `m${randomOriginPath}${randomKeyPath}`
+  ).publicKey;
+  const vaultOutput = new Output({
+    descriptor: `wpkh(${randomKey})`,
+    network
+  });
+  console.log(`Vault address: ${vaultOutput.getAddress()}`);
+  const psbtVault = new Psbt({ network });
+  const walletPrevTransaction = Transaction.fromHex(walletPrevTxHex);
+  const walletPrevVout = walletPrevTransaction.outs.findIndex(
+    txOut =>
+      txOut.script.toString('hex') ===
+      walletUTXO.getScriptPubKey().toString('hex')
+  );
+  const vaultFinalizer = walletUTXO.updatePsbtAsInput({
+    psbt: psbtVault,
+    txHex: walletPrevTxHex,
+    vout: walletPrevVout
+  });
+  const backupFunding = BACKUP_FUNDING;
+
+  if (!walletPrevTransaction.outs[walletPrevVout])
+    throw new Error('Invalid vout');
+  const walletBalance = walletPrevTransaction.outs[walletPrevVout].value;
+  Log(`💎 Wallet balance (sats): ${walletBalance}`);
+  const vaultedAmount = walletBalance - FEE - backupFunding;
+  vaultOutput.updatePsbtAsOutput({
+    psbt: psbtVault,
+    value: vaultedAmount
+  });
+  walletUTXO.updatePsbtAsOutput({ psbt: psbtVault, value: backupFunding });
+  descriptors.signers.signBIP32({ psbt: psbtVault, masterNode });
+  vaultFinalizer({ psbt: psbtVault });
+
+  //////////////////////
+  // Trigger:
+  //////////////////////
+  const unvaultKey = descriptors.keyExpressionBIP32({
+    masterNode,
+    originPath: "/0'",
+    keyPath: '/0'
+  });
+  const panicKey = randomKey;
+  const triggerDescriptor = createTriggerDescriptor({
+    unvaultKey,
+    panicKey,
+    lockBlocks: LOCK_BLOCKS
+  });
+  const triggerOutputPanicPath = new Output({
+    descriptor: triggerDescriptor,
+    network,
+    signersPubKeys: [randomPubKey]
+  });
+  const { pubkey: unvaultPubKey } = parseKeyExpression({
+    keyExpression: unvaultKey,
+    network
+  });
+  if (!unvaultPubKey) throw new Error('Could not extract unvaultPubKey');
+
+  const psbtTrigger = new Psbt({ network });
+  psbtTrigger.setVersion(3);
+  //Add the input (vaultOutput) to psbtTrigger as input:
+  const triggerInputFinalizer = vaultOutput.updatePsbtAsInput({
+    psbt: psbtTrigger,
+    txHex: psbtVault.extractTransaction().toHex(),
+    vout: 0
+  });
+  psbtTrigger.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
+  triggerOutputPanicPath.updatePsbtAsOutput({
+    psbt: psbtTrigger,
+    value: vaultedAmount //zero fee
+  }); //vout: 1
+  descriptors.signers.signBIP32({
+    psbt: psbtTrigger,
+    masterNode: randomMasterNode
+  });
+  triggerInputFinalizer({ psbt: psbtTrigger });
+
+  //////////////////////
+  // Panic:
+  //////////////////////
+
+  const psbtPanic = new Psbt({ network });
+  psbtPanic.setVersion(3);
+  psbtPanic.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
+  const panicInputFinalizer = triggerOutputPanicPath.updatePsbtAsInput({
+    psbt: psbtPanic,
+    txHex: psbtTrigger.extractTransaction().toHex(),
+    vout: 1
+  });
+  const coldOutput = new Output({
+    descriptor: `addr(${coldAddress}`,
+    network
+  });
+  coldOutput.updatePsbtAsOutput({ psbt: psbtPanic, value: vaultedAmount });
+  descriptors.signers.signBIP32({
+    psbt: psbtPanic,
+    masterNode: randomMasterNode
+  });
+  panicInputFinalizer({ psbt: psbtPanic });
+
+  return { psbtVault, psbtTrigger, psbtPanic };
+};
+
+const getNextBackupIndex = async ({
+  masterNode,
+  network
+}: {
+  masterNode: BIP32Interface;
+  network: Network;
+}): Promise<number> => {
+  let index = 0;
+  while (true) {
+    const path = getBackupPath(network, index);
+    const pubkey = masterNode.derivePath(path).publicKey;
+
+    // Predictable BIP86 address (Key-path spend)
+    const { address } = payments.p2tr({
+      internalPubkey: pubkey.subarray(1, 33), //to x-only
+      network
+    });
+
+    if (!address) throw new Error('Could not derive address');
+
+    Log(`Checking discovery marker at index ${index}: ${address}...`);
+    const { txCount } = await explorer.fetchAddress(address);
+
+    if (txCount === 0) {
+      Log(`Next available backup index: ${index}`);
+      return index;
+    }
+    index++;
+  }
+};
+
+const createBackupChain = ({
+  backupIndex,
+  psbtTrigger,
+  psbtPanic,
+  psbtVault,
+  fundingTxHex,
+  fundingVout,
+  masterNode,
+  walletUTXO,
+  tag
+}: {
+  backupIndex: number;
+  psbtTrigger: Psbt;
+  psbtPanic: Psbt;
+  psbtVault: Psbt;
+  fundingTxHex: string;
+  fundingVout: number;
+  masterNode: BIP32Interface;
+  /** to pay for the inscription **/
+  walletUTXO: descriptors.OutputInstance;
+  tag?: string;
+}) => {
+  const vaultTxId = psbtVault.extractTransaction().getHash();
+  const triggerTx = psbtTrigger.extractTransaction().toBuffer();
+  const panicTx = psbtPanic.extractTransaction().toBuffer();
+
+  const entry = serializeVaultEntry({
+    vaultTxId,
+    triggerTx,
+    panicTx,
+    ...(tag ? { tag } : {})
+  });
+  const header = Buffer.from('REW\x01'); // Magic + Version 1
+  const content = Buffer.concat([header, entry]);
+
+  const backupPath = getBackupPath(network, backupIndex);
+  const backupNode = masterNode.derivePath(backupPath);
+
+  const backupInscription = new Inscription({
+    contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
+    content,
+    bip32Derivation: {
+      masterFingerprint: masterNode.fingerprint,
+      path: backupPath,
+      pubkey: backupNode.publicKey
+    },
+    network
+  });
+
+  const psbtCommit = new Psbt({ network });
+  psbtCommit.setVersion(3);
+  const commitInputFinalizer = walletUTXO.updatePsbtAsInput({
+    psbt: psbtCommit,
+    txHex: fundingTxHex,
+    vout: fundingVout
+  });
+  const inscriptionValue = 1000;
+  backupInscription.updatePsbtAsOutput({
+    psbt: psbtCommit,
+    value: inscriptionValue
+  });
+  descriptors.signers.signBIP32({ psbt: psbtCommit, masterNode });
+  commitInputFinalizer({ psbt: psbtCommit });
+
+  const psbtReveal = new Psbt({ network });
+  psbtReveal.setVersion(3);
+  const revealInputFinalizer = backupInscription.updatePsbtAsInput({
+    psbt: psbtReveal,
+    txHex: psbtCommit.extractTransaction().toHex(),
+    vout: 0
+  });
+  psbtReveal.addOutput({ script: P2A_SCRIPT, value: 0 });
+  walletUTXO.updatePsbtAsOutput({
+    psbt: psbtReveal,
+    value: inscriptionValue - FEE
+  });
+  descriptors.signers.signBIP32({ psbt: psbtReveal, masterNode });
+  revealInputFinalizer({ psbt: psbtReveal });
+
+  return { psbtCommit, psbtReveal };
 };
 
 const start = async () => {
@@ -220,246 +463,28 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     await new Promise(r => setTimeout(r, 1000)); //sleep 1s
   }
 
-  const walletPrevTransaction = Transaction.fromHex(walletPrevTxHex);
-  const walletPrevVout = walletPrevTransaction.outs.findIndex(
-    txOut =>
-      txOut.script.toString('hex') ===
-      walletUTXO.getScriptPubKey().toString('hex')
-  );
-  if (!walletPrevTransaction.outs[walletPrevVout])
-    throw new Error('Invalid vout');
-
-  const walletBalance = walletPrevTransaction.outs[walletPrevVout].value;
-  Log(`💎 Wallet balance (sats): ${walletBalance}`);
-
-  const randomMnemonic = generateMnemonic();
-
-  const randomMasterNode = BIP32.fromSeed(
-    mnemonicToSeedSync(randomMnemonic),
-    network
-  );
-  const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`;
-  const randomKeyPath = `/0/0`;
-  const randomKey = descriptors.keyExpressionBIP32({
-    masterNode: randomMasterNode,
-    originPath: randomOriginPath,
-    keyPath: randomKeyPath
-  });
-  const randomPubKey = randomMasterNode.derivePath(
-    `m${randomOriginPath}${randomKeyPath}`
-  ).publicKey;
-
-  const createVaultChain = () => {
-    const vaultOutput = new Output({
-      descriptor: `wpkh(${randomKey})`,
-      network
-    });
-    console.log(`Vault address: ${vaultOutput.getAddress()}`);
-    const psbtVault = new Psbt({ network });
-    const vaultFinalizer = walletUTXO.updatePsbtAsInput({
-      psbt: psbtVault,
-      txHex: walletPrevTxHex,
-      vout: walletPrevVout
-    });
-    const backupFunding = BACKUP_FUNDING;
-    const vaultedAmount = walletBalance - FEE - backupFunding;
-    vaultOutput.updatePsbtAsOutput({
-      psbt: psbtVault,
-      value: vaultedAmount
-    });
-    walletUTXO.updatePsbtAsOutput({ psbt: psbtVault, value: backupFunding });
-    descriptors.signers.signBIP32({ psbt: psbtVault, masterNode });
-    vaultFinalizer({ psbt: psbtVault });
-
-    //////////////////////
-    // Trigger:
-    //////////////////////
-    const unvaultKey = descriptors.keyExpressionBIP32({
-      masterNode,
-      originPath: "/0'",
-      keyPath: '/0'
-    });
-    const panicKey = randomKey;
-    const triggerDescriptor = createTriggerDescriptor({
-      unvaultKey,
-      panicKey,
-      lockBlocks: LOCK_BLOCKS
-    });
-    const triggerOutputPanicPath = new Output({
-      descriptor: triggerDescriptor,
+  const coldAddress = new Output({
+    descriptor: wpkhBIP32({
+      masterNode: emergencyMasterNode,
       network,
-      signersPubKeys: [randomPubKey]
-    });
-    const { pubkey: unvaultPubKey } = parseKeyExpression({
-      keyExpression: unvaultKey,
-      network
-    });
-    if (!unvaultPubKey) throw new Error('Could not extract unvaultPubKey');
-
-    const psbtTrigger = new Psbt({ network });
-    psbtTrigger.setVersion(3);
-    //Add the input (vaultOutput) to psbtTrigger as input:
-    const triggerInputFinalizer = vaultOutput.updatePsbtAsInput({
-      psbt: psbtTrigger,
-      txHex: psbtVault.extractTransaction().toHex(),
-      vout: 0
-    });
-    psbtTrigger.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
-    triggerOutputPanicPath.updatePsbtAsOutput({
-      psbt: psbtTrigger,
-      value: vaultedAmount //zero fee
-    }); //vout: 1
-    descriptors.signers.signBIP32({
-      psbt: psbtTrigger,
-      masterNode: randomMasterNode
-    });
-    triggerInputFinalizer({ psbt: psbtTrigger });
-
-    //////////////////////
-    // Panic:
-    //////////////////////
-
-    const psbtPanic = new Psbt({ network });
-    psbtPanic.setVersion(3);
-    psbtPanic.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
-    const panicInputFinalizer = triggerOutputPanicPath.updatePsbtAsInput({
-      psbt: psbtPanic,
-      txHex: psbtTrigger.extractTransaction().toHex(),
-      vout: 1
-    });
-    const coldOutput = new Output({
-      descriptor: wpkhBIP32({
-        masterNode: emergencyMasterNode,
-        network,
-        account: 1,
-        keyPath: '/0/0'
-      }),
-      network
-    });
-    coldOutput.updatePsbtAsOutput({ psbt: psbtPanic, value: vaultedAmount });
-    descriptors.signers.signBIP32({
-      psbt: psbtPanic,
-      masterNode: randomMasterNode
-    });
-    panicInputFinalizer({ psbt: psbtPanic });
-
-    return { psbtVault, psbtTrigger, psbtPanic };
-  };
-
-  const getNextBackupIndex = async ({
-    masterNode,
+      account: 1,
+      keyPath: '/0/0'
+    }),
     network
-  }: {
-    masterNode: BIP32Interface;
-    network: Network;
-  }): Promise<number> => {
-    let index = 0;
-    while (true) {
-      const path = getBackupPath(network, index);
-      const pubkey = masterNode.derivePath(path).publicKey;
-
-      // Predictable BIP86 address (Key-path spend)
-      const { address } = payments.p2tr({
-        internalPubkey: pubkey.subarray(1, 33), //to x-only
-        network
-      });
-
-      if (!address) throw new Error('Could not derive address');
-
-      Log(`Checking discovery marker at index ${index}: ${address}...`);
-      const { txCount } = await explorer.fetchAddress(address);
-
-      if (txCount === 0) {
-        Log(`Next available backup index: ${index}`);
-        return index;
-      }
-      index++;
-    }
-  };
-
-  const createBackupChain = ({
-    backupIndex,
-    psbtTrigger,
-    psbtPanic,
-    psbtVault,
-    fundingTxHex,
-    fundingVout,
-    tag
-  }: {
-    backupIndex: number;
-    psbtTrigger: Psbt;
-    psbtPanic: Psbt;
-    psbtVault: Psbt;
-    fundingTxHex: string;
-    fundingVout: number;
-    tag?: string;
-  }) => {
-    const vaultTxId = psbtVault.extractTransaction().getHash();
-    const triggerTx = psbtTrigger.extractTransaction().toBuffer();
-    const panicTx = psbtPanic.extractTransaction().toBuffer();
-
-    const entry = serializeVaultEntry({
-      vaultTxId,
-      triggerTx,
-      panicTx,
-      ...(tag ? { tag } : {})
-    });
-    const header = Buffer.from('REW\x01'); // Magic + Version 1
-    const content = Buffer.concat([header, entry]);
-
-    const backupPath = getBackupPath(network, backupIndex);
-    const backupNode = masterNode.derivePath(backupPath);
-
-    const backupInscription = new Inscription({
-      contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
-      content,
-      bip32Derivation: {
-        masterFingerprint: masterNode.fingerprint,
-        path: backupPath,
-        pubkey: backupNode.publicKey
-      },
-      network
-    });
-
-    const psbtCommit = new Psbt({ network });
-    psbtCommit.setVersion(3);
-    const commitInputFinalizer = walletUTXO.updatePsbtAsInput({
-      psbt: psbtCommit,
-      txHex: fundingTxHex,
-      vout: fundingVout
-    });
-    const inscriptionValue = 1000;
-    backupInscription.updatePsbtAsOutput({
-      psbt: psbtCommit,
-      value: inscriptionValue
-    });
-    descriptors.signers.signBIP32({ psbt: psbtCommit, masterNode });
-    commitInputFinalizer({ psbt: psbtCommit });
-
-    const psbtReveal = new Psbt({ network });
-    psbtReveal.setVersion(3);
-    const revealInputFinalizer = backupInscription.updatePsbtAsInput({
-      psbt: psbtReveal,
-      txHex: psbtCommit.extractTransaction().toHex(),
-      vout: 0
-    });
-    psbtReveal.addOutput({ script: P2A_SCRIPT, value: 0 });
-    walletUTXO.updatePsbtAsOutput({
-      psbt: psbtReveal,
-      value: inscriptionValue - FEE
-    });
-    descriptors.signers.signBIP32({ psbt: psbtReveal, masterNode });
-    revealInputFinalizer({ psbt: psbtReveal });
-
-    return { psbtCommit, psbtReveal };
-  };
-
-  const vaultChain = createVaultChain();
+  }).getAddress();
+  const vaultChain = createVaultChain({
+    walletUTXO,
+    walletPrevTxHex,
+    masterNode,
+    coldAddress
+  });
 
   const backupIndex = await getNextBackupIndex({ masterNode, network });
   console.log(`Backup index tip: ${backupIndex}`);
   const backupChain = createBackupChain({
     backupIndex,
+    masterNode,
+    walletUTXO,
     psbtTrigger: vaultChain.psbtTrigger,
     psbtPanic: vaultChain.psbtPanic,
     psbtVault: vaultChain.psbtVault,
