@@ -14,6 +14,7 @@ import { networks, Psbt, Transaction } from 'bitcoinjs-lib';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { EsploraExplorer } from '@bitcoinerlab/explorer';
 import { InscriptionsFactory } from './inscriptions';
+import { encode as encodeVarInt, encodingLength } from 'varuint-bitcoin';
 
 const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
 const LOCK_BLOCKS = 2;
@@ -46,6 +47,47 @@ const BACKUP_FUNDING = 1500;
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
+
+/**
+ * Serializes a single vault entry into RAF v1 TLV format.
+ * Format: [Type 0x01][PayloadLen][VaultTxId][TriggerLen][Trigger][PanicLen][Panic][TagLen][Tag]
+ */
+
+const serializeVaultEntry = ({
+  vaultTxId,
+  triggerTx,
+  panicTx,
+  tag
+}: {
+  vaultTxId: Buffer;
+  triggerTx: Buffer;
+  panicTx: Buffer;
+  tag?: string;
+}) => {
+  const tagBuffer = tag ? Buffer.from(tag, 'utf8') : Buffer.alloc(0);
+
+  const encVI = (n: number) => {
+    const b = Buffer.allocUnsafe(encodingLength(n));
+    encodeVarInt(n, b);
+    return b;
+  };
+
+  const payload = Buffer.concat([
+    vaultTxId, // 32 bytes
+    encVI(triggerTx.length),
+    triggerTx,
+    encVI(panicTx.length),
+    panicTx,
+    encVI(tagBuffer.length),
+    tagBuffer
+  ]);
+
+  return Buffer.concat([
+    Buffer.from([0x01]), // Type: Vault
+    encVI(payload.length),
+    payload
+  ]);
+};
 
 export const createTriggerDescriptor = ({
   unvaultKey,
@@ -298,33 +340,48 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   };
 
   const createBackupChain = ({
+    index,
     psbtTrigger,
     psbtPanic,
+    psbtVault,
     fundingTxHex,
-    fundingVout
+    fundingVout,
+    tag
   }: {
+    index: number;
     psbtTrigger: Psbt;
     psbtPanic: Psbt;
+    psbtVault: Psbt;
     fundingTxHex: string;
     fundingVout: number;
+    tag?: string;
   }) => {
-    const txTrigger = psbtTrigger.extractTransaction().toBuffer();
-    const txPanic = psbtPanic.extractTransaction().toBuffer();
+    const vaultTxId = psbtVault.extractTransaction().getHash();
+    const triggerTx = psbtTrigger.extractTransaction().toBuffer();
+    const panicTx = psbtPanic.extractTransaction().toBuffer();
 
-    const lenTrigger = Buffer.alloc(4);
-    lenTrigger.writeUInt32LE(txTrigger.length);
-    const lenPanic = Buffer.alloc(4);
-    lenPanic.writeUInt32LE(txPanic.length);
+    const entry = serializeVaultEntry({
+      vaultTxId,
+      triggerTx,
+      panicTx,
+      ...(tag ? { tag } : {})
+    });
+    const header = Buffer.from('REW\x01'); // Magic + Version 1
+    const content = Buffer.concat([header, entry]);
 
-    const content = Buffer.concat([lenTrigger, txTrigger, lenPanic, txPanic]);
+    // Backup derivation path: m/86'/{coin_type}'/0'/9/{index}
+    const coinType = network === networks.bitcoin ? "0'" : "1'";
+    const backupIndex = index;
+    const backupPath = `m/86'/${coinType}/0'/9/${backupIndex}`;
+    const backupNode = masterNode.derivePath(backupPath);
 
     const backupInscription = new Inscription({
       contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
       content,
       bip32Derivation: {
-        masterFingerprint: randomMasterNode.fingerprint,
-        path: `m${randomOriginPath}${randomKeyPath}`,
-        pubkey: randomPubKey
+        masterFingerprint: masterNode.fingerprint,
+        path: backupPath,
+        pubkey: backupNode.publicKey
       },
       network
     });
@@ -358,7 +415,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     });
     descriptors.signers.signBIP32({
       psbt: psbtReveal,
-      masterNode: randomMasterNode
+      masterNode: masterNode // Using masterNode for the backup path
     });
     revealInputFinalizer({ psbt: psbtReveal });
 
@@ -368,10 +425,13 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   const vaultChain = createVaultChain();
 
   const backupChain = createBackupChain({
+    index: 0,
     psbtTrigger: vaultChain.psbtTrigger,
     psbtPanic: vaultChain.psbtPanic,
+    psbtVault: vaultChain.psbtVault,
     fundingTxHex: vaultChain.psbtVault.extractTransaction().toHex(),
-    fundingVout: 1
+    fundingVout: 1,
+    tag: 'My First Vault'
   });
 
   console.log(`
@@ -380,109 +440,6 @@ trigger id: ${vaultChain.psbtTrigger.extractTransaction().getId()}
 commit id: ${backupChain.psbtCommit.extractTransaction().getId()}
 reveal id: ${backupChain.psbtReveal.extractTransaction().getId()}
 `);
-
-  /*
-  ///////////
-  ///////////
-  ///////////
-  ///////////
-  ///////////
-  //We need to fee bump it later:
-  const psbtTriggerFeeBump = new Psbt({ network });
-  psbtTriggerFeeBump.setVersion(3);
-  psbtTriggerFeeBump.addInput({
-    hash: psbtTrigger.extractTransaction().getId(),
-    index: 0,
-    witnessUtxo: { script: P2A_SCRIPT, value: 0 }
-  });
-  psbtTriggerFeeBump.finalizeInput(0, () => ({
-    finalScriptSig: Buffer.alloc(0),
-    finalScriptWitness: Buffer.from([0x00]) // empty item
-  }));
-  const triggerFeeBumpFinalizer = destOutput.updatePsbtAsInput({
-    psbt: childPsbt,
-    vout: 1,
-    txHex: parentTransaction.toHex()
-  });
-
-  // Create destination address (account 1)
-  const destOutput = new Output({
-    descriptor: wpkhBIP32({ masterNode, network, account: 1, keyPath: '/0/0' }),
-    network
-  });
-  const destValue = walletBalance;
-  const parentPsbt = new Psbt({ network });
-  parentPsbt.setVersion(3);
-  const parentInputFinalizer = walletUTXO.updatePsbtAsInput({
-    psbt: parentPsbt,
-    vout: walletPrevVout,
-    txHex: walletPrevTxHex
-  });
-  parentPsbt.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
-  destOutput.updatePsbtAsOutput({ psbt: parentPsbt, value: destValue }); //vout: 1
-
-  descriptors.signers.signBIP32({ psbt: parentPsbt, masterNode });
-  parentInputFinalizer({ psbt: parentPsbt });
-
-  const childPsbt = new Psbt({ network });
-  childPsbt.setVersion(3);
-
-  const parentTransaction = parentPsbt.extractTransaction();
-
-  childPsbt.addInput({
-    hash: parentTransaction.getId(),
-    index: 0,
-    witnessUtxo: { script: P2A_SCRIPT, value: 0 }
-  });
-  childPsbt.finalizeInput(0, () => ({
-    finalScriptSig: Buffer.alloc(0),
-    finalScriptWitness: Buffer.from([0x00]) // empty item
-  }));
-
-  // This spends both outputs from the parent
-  const childInputFinalizer = destOutput.updatePsbtAsInput({
-    psbt: childPsbt,
-    vout: 1,
-    txHex: parentTransaction.toHex()
-  });
-  //give back the money to ourselves.
-  walletUTXO.updatePsbtAsOutput({ psbt: childPsbt, value: destValue - FEE });
-  descriptors.signers.signBIP32({ psbt: childPsbt, masterNode });
-  childInputFinalizer({ psbt: childPsbt });
-
-  const childTransaction = childPsbt.extractTransaction();
-
-  Log(`📦 Submitting parent + child as a package...
-
-Bitcoin Core will validate them together as a 1P1C package.`);
-  const pkgUrl = `${ESPLORA_API}/txs/package`;
-  const pkgRes = await fetch(pkgUrl, {
-    method: 'POST',
-    body: JSON.stringify([parentTransaction.toHex(), childTransaction.toHex()])
-  });
-
-  if (pkgRes.status === 404) {
-    throw new Error(
-      `Package endpoint not available at ${pkgUrl}. Your Esplora instance likely doesn't support /txs/package`
-    );
-  }
-  if (!pkgRes.ok) {
-    const errText = await pkgRes.text();
-    throw new Error(`Package submit failed (${pkgRes.status}): ${errText}`);
-  }
-
-  const pkgRespJson = await pkgRes.json();
-  Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
-  Log(`
-🎉 Hooray! You just executed a TRUC (v3) + P2A fee bump:
-
-🧑‍🍼 Parent tx (yes, the one with *zero fees*): 
-  <a href="${EXPLORER}/${parentTransaction.getId()}" target="_blank">${parentTransaction.getId()}</a>
-
-👶 Child tx (pays the actual fee):
-  <a href="${EXPLORER}/${childTransaction.getId()}" target="_blank">${childTransaction.getId()}</a>
-`);
-  */
 };
 if (isWeb) (window as unknown as { start: typeof start }).start = start;
 
