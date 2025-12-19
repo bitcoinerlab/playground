@@ -296,8 +296,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     return { psbtVault, psbtTrigger, psbtPanic };
   };
 
-  const vaultChain = createVaultChain();
-
   const createBackupChain = ({
     psbtTrigger,
     psbtPanic,
@@ -359,6 +357,8 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
     return { psbtCommit, psbtReveal };
   };
+
+  const vaultChain = createVaultChain();
 
   const backupChain = createBackupChain({
     psbtTrigger: vaultChain.psbtTrigger,
