@@ -41,6 +41,7 @@ const { Output, BIP32, parseKeyExpression } =
 const { Inscription } = InscriptionsFactory(secp256k1);
 const network = networks.regtest;
 const FEE = 500;
+const BACKUP_FUNDING = 1500;
 
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
@@ -211,7 +212,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       txHex: walletPrevTxHex,
       vout: walletPrevVout
     });
-    const backupFunding = 1500;
+    const backupFunding = BACKUP_FUNDING;
     const vaultedAmount = walletBalance - FEE - backupFunding;
     vaultOutput.updatePsbtAsOutput({
       psbt: psbtVault,
@@ -309,7 +310,13 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   }) => {
     const txTrigger = psbtTrigger.extractTransaction().toBuffer();
     const txPanic = psbtPanic.extractTransaction().toBuffer();
-    const content = Buffer.concat([txTrigger, txPanic]);
+
+    const lenTrigger = Buffer.alloc(4);
+    lenTrigger.writeUInt32LE(txTrigger.length);
+    const lenPanic = Buffer.alloc(4);
+    lenPanic.writeUInt32LE(txPanic.length);
+
+    const content = Buffer.concat([lenTrigger, txTrigger, lenPanic, txPanic]);
 
     const backupInscription = new Inscription({
       contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
