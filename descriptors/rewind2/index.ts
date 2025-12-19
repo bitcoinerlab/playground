@@ -1,20 +1,22 @@
 // Copyright (c) 2025 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
 
-//Learn more:
-//Guide: https://bitcoinops.org/en/bitcoin-core-28-wallet-integration-guide/
-//TRUC: https://bips.dev/431/
-//TRUC PR: https://github.com/bitcoin/bitcoin/pull/28948
-//P2A PR: https://github.com/bitcoin/bitcoin/pull/30352
 import './codesandboxFixes';
 import { readFileSync, writeFileSync } from 'fs';
 import * as descriptors from '@bitcoinerlab/descriptors';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
-import { networks, Psbt, Transaction } from 'bitcoinjs-lib';
+import {
+  networks,
+  Psbt,
+  Transaction,
+  type Network,
+  payments
+} from 'bitcoinjs-lib';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { EsploraExplorer } from '@bitcoinerlab/explorer';
 import { InscriptionsFactory } from './inscriptions';
 import { encode as encodeVarInt, encodingLength } from 'varuint-bitcoin';
+import type { BIP32Interface } from 'bip32';
 
 const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
 const LOCK_BLOCKS = 2;
@@ -339,6 +341,35 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     return { psbtVault, psbtTrigger, psbtPanic };
   };
 
+  const getNextBackupIndex = async (
+    masterNode: BIP32Interface,
+    network: Network
+  ): Promise<number> => {
+    const coinType = network === networks.bitcoin ? "0'" : "1'";
+    let index = 0;
+    while (true) {
+      const path = `m/86'/${coinType}/0'/9/${index}`;
+      const pubkey = masterNode.derivePath(path).publicKey;
+
+      // Predictable BIP86 address (Key-path spend)
+      const { address } = payments.p2tr({
+        internalPubkey: pubkey.subarray(1, 33), //to x-only
+        network
+      });
+
+      if (!address) throw new Error('Could not derive address');
+
+      Log(`Checking discovery marker at index ${index}: ${address}...`);
+      const { txCount } = await explorer.fetchAddress(address);
+
+      if (txCount === 0) {
+        Log(`Next available backup index: ${index}`);
+        return index;
+      }
+      index++;
+    }
+  };
+
   const createBackupChain = ({
     index,
     psbtTrigger,
@@ -413,10 +444,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       psbt: psbtReveal,
       value: inscriptionValue - FEE
     });
-    descriptors.signers.signBIP32({
-      psbt: psbtReveal,
-      masterNode: masterNode // Using masterNode for the backup path
-    });
+    descriptors.signers.signBIP32({ psbt: psbtReveal, masterNode });
     revealInputFinalizer({ psbt: psbtReveal });
 
     return { psbtCommit, psbtReveal };
@@ -424,8 +452,10 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const vaultChain = createVaultChain();
 
+  const backupIndex = await getNextBackupIndex(masterNode, network);
+  console.log(`Backup index tip: ${backupIndex}`);
   const backupChain = createBackupChain({
-    index: 0,
+    index: backupIndex,
     psbtTrigger: vaultChain.psbtTrigger,
     psbtPanic: vaultChain.psbtPanic,
     psbtVault: vaultChain.psbtVault,
