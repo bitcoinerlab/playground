@@ -1,8 +1,14 @@
-const FEE = 500; //FIXME: dynamic - also duplicated on index.ts and vaults.ts
+const FEE = 500; //FIXME: dynamic - also duplicated on index.ts and vaults.ts - better use FEE_RATE
 const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
 const LOCK_BLOCKS = 2;
-const BACKUP_FUNDING = 1500; //FIXME: dynamic
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
+
+export type UtxosData = Array<{
+  tx: Transaction;
+  txHex: string;
+  vout: number;
+  output: OutputInstance;
+}>;
 
 import { Log } from './utils';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
@@ -28,6 +34,7 @@ import { compilePolicy } from '@bitcoinerlab/miniscript';
 import { InscriptionsFactory } from './inscriptions';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import type { Explorer } from '@bitcoinerlab/explorer';
+import { coinselect, dustThreshold } from '@bitcoinerlab/coinselect';
 const { Inscription } = InscriptionsFactory(secp256k1);
 
 const getBackupPath = (network: Network, index: number): string => {
@@ -96,17 +103,71 @@ const createTriggerDescriptor = ({
   return triggerDescriptor;
 };
 
-export const createVaultChain = ({
-  walletUTXO,
-  walletPrevTxHex,
+const getOutputsWithValue = (utxosData: UtxosData) =>
+  utxosData.map(utxo => {
+    const out = utxo.tx.outs[utxo.vout];
+    if (!out) throw new Error('Invalid utxo');
+    return { output: utxo.output, value: out.value };
+  });
+const coinselectUtxosData = ({
+  utxosData,
+  targetOutput,
+  changeOutput,
+  targetValue,
+  feeRate
+}: {
+  utxosData: UtxosData;
+  targetOutput: OutputInstance;
+  serviceOutput?: OutputInstance;
+  changeOutput: OutputInstance;
+  targetValue: number;
+  feeRate: number;
+}) => {
+  const utxos = getOutputsWithValue(utxosData);
+  if (!utxos.length) return;
+  if (targetValue <= dustThreshold(targetOutput)) return;
+  const coinselected = coinselect({
+    utxos,
+    targets: [{ output: targetOutput, value: targetValue }],
+    remainder: changeOutput,
+    feeRate
+  });
+  if (!coinselected) return;
+  const selectedUtxosData =
+    coinselected.utxos.length === utxosData.length
+      ? utxosData
+      : coinselected.utxos.map(utxo => {
+          const utxoData = utxosData[utxos.indexOf(utxo)];
+          if (!utxoData) throw new Error('Invalid utxoData');
+          return utxoData;
+        });
+  return {
+    vsize: coinselected.vsize,
+    fee: coinselected.fee,
+    targets: coinselected.targets,
+    utxosData: selectedUtxosData
+  };
+};
+
+//FIXME: pass here the randomMasterNode
+export const createVault = ({
+  vaultedAmount,
+  unvaultKey,
+  feeRate,
+  utxosData,
   masterNode,
   coldAddress,
+  changeDescriptorWithIndex,
   network
 }: {
-  walletUTXO: OutputInstance;
-  walletPrevTxHex: string;
+  vaultedAmount: number;
+  /** The unvault key expression that must be used to create triggerDescriptor */
+  unvaultKey: string;
+  feeRate: number;
+  utxosData: UtxosData;
   masterNode: BIP32Interface;
   coldAddress: string;
+  changeDescriptorWithIndex: { descriptor: string; index: number };
   network: Network;
 }) => {
   const randomMnemonic = generateMnemonic();
@@ -129,42 +190,56 @@ export const createVaultChain = ({
     descriptor: `wpkh(${randomKey})`,
     network
   });
-  console.log(`Vault address: ${vaultOutput.getAddress()}`);
+  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
+  // Run the coinselector
+  const selected = coinselectUtxosData({
+    utxosData,
+    targetValue: vaultedAmount,
+    targetOutput: vaultOutput,
+    changeOutput,
+    feeRate
+  });
+  if (!selected) return 'COINSELECT_ERROR';
+  const vaultUtxosData = selected.utxosData;
+  const vaultTargets = selected.targets;
+  const vaultMiningFee = selected.fee;
+  if (vaultTargets[0]?.output !== vaultOutput)
+    throw new Error("coinselect first output should be the vault's output");
+  if (vaultTargets.length > 2)
+    throw new Error('coinselect ouputs should be vault and fee at most');
   const psbtVault = new Psbt({ network });
-  const walletPrevTransaction = Transaction.fromHex(walletPrevTxHex);
-  const walletPrevVout = walletPrevTransaction.outs.findIndex(
-    txOut =>
-      txOut.script.toString('hex') ===
-      walletUTXO.getScriptPubKey().toString('hex')
-  );
-  const vaultFinalizer = walletUTXO.updatePsbtAsInput({
-    psbt: psbtVault,
-    txHex: walletPrevTxHex,
-    vout: walletPrevVout
-  });
-  const backupFunding = BACKUP_FUNDING;
 
-  if (!walletPrevTransaction.outs[walletPrevVout])
-    throw new Error('Invalid vout');
-  const walletBalance = walletPrevTransaction.outs[walletPrevVout].value;
-  Log(`💎 Wallet balance (sats): ${walletBalance}`);
-  const vaultedAmount = walletBalance - FEE - backupFunding;
-  vaultOutput.updatePsbtAsOutput({
-    psbt: psbtVault,
-    value: vaultedAmount
-  });
-  walletUTXO.updatePsbtAsOutput({ psbt: psbtVault, value: backupFunding });
+  //Add the inputs to psbtVault:
+  const vaultFinalizers = [];
+  for (const utxoData of vaultUtxosData) {
+    const { output, vout, txHex } = utxoData;
+    // Add the utxo as input of psbtVault:
+    const inputFinalizer = output.updatePsbtAsInput({
+      psbt: psbtVault,
+      txHex,
+      vout
+    });
+    vaultFinalizers.push(inputFinalizer);
+  }
+  for (const target of vaultTargets) {
+    target.output.updatePsbtAsOutput({
+      psbt: psbtVault,
+      value: target.value
+    });
+  }
+  //Sign
   signers.signBIP32({ psbt: psbtVault, masterNode });
-  vaultFinalizer({ psbt: psbtVault });
+  //Finalize
+  vaultFinalizers.forEach(finalizer => finalizer({ psbt: psbtVault }));
+  const txVault = psbtVault.extractTransaction(true);
+  if (txVault.virtualSize() > selected.vsize)
+    throw new Error('vsize larger than coinselected estimated one');
+  const feeRateVault = vaultMiningFee / txVault.virtualSize();
+  if (feeRateVault < 1) return 'UNKNOWN_ERROR';
 
   //////////////////////
   // Trigger:
   //////////////////////
-  const unvaultKey = keyExpressionBIP32({
-    masterNode,
-    originPath: "/0'",
-    keyPath: '/0'
-  });
   const panicKey = randomKey;
   const triggerDescriptor = createTriggerDescriptor({
     unvaultKey,
@@ -260,28 +335,28 @@ export const getNextBackupIndex = async ({
   }
 };
 
-export const createBackupChain = ({
+export const createBackup = ({
   backupIndex,
+  feeRate,
+  masterNode,
+  utxosData,
   psbtTrigger,
   psbtPanic,
   psbtVault,
-  fundingTxHex,
-  fundingVout,
-  masterNode,
-  walletUTXO,
   network,
+  changeDescriptorWithIndex,
   tag
 }: {
   backupIndex: number;
+  feeRate: number;
+  masterNode: BIP32Interface;
+  /** to pay for the inscription **/
+  utxosData: UtxosData;
   psbtTrigger: Psbt;
   psbtPanic: Psbt;
   psbtVault: Psbt;
-  fundingTxHex: string;
-  fundingVout: number;
-  masterNode: BIP32Interface;
-  /** to pay for the inscription **/
-  walletUTXO: OutputInstance;
   network: Network;
+  changeDescriptorWithIndex: { descriptor: string; index: number };
   tag?: string;
 }) => {
   const vaultTxId = psbtVault.extractTransaction().getHash();

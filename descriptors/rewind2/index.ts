@@ -5,33 +5,71 @@ import './codesandboxFixes';
 import { readFileSync, writeFileSync } from 'fs';
 import {
   DescriptorsFactory,
+  keyExpressionBIP32,
   scriptExpressions
 } from '@bitcoinerlab/descriptors';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
-import { networks, Transaction } from 'bitcoinjs-lib';
+import { networks, type Network } from 'bitcoinjs-lib';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { EsploraExplorer } from '@bitcoinerlab/explorer';
+import {
+  DiscoveryFactory,
+  type DiscoveryInstance
+} from '@bitcoinerlab/discovery';
 
-const FEE = 500; //FIXME: dynamic - also duplicated on index.ts and vaults.ts
+const FEE = 500; //FIXME: dynamic - also duplicated on index.ts and vaults.ts - better use FEE_RATE
 //FIXME: this still needs a mechanism to keep some margin for not to spend from the wallet: the max expected fee in future for (trigger+panic) x nActiveVaults
+const FEE_RATE = 2.0;
+const BACKUP_FUNDING = 1500; //FIXME: dynamic
 
-const EXPLORER = `https://tape.rewindbitcoin.com/explorer`;
+export const getUtxosData = (
+  utxos: Array<string>,
+  network: Network,
+  discovery: DiscoveryInstance
+): UtxosData => {
+  return utxos.map(utxo => {
+    const [txId, strVout] = utxo.split(':');
+    const vout = Number(strVout);
+    if (!txId || isNaN(vout) || !Number.isInteger(vout) || vout < 0)
+      throw new Error(`Invalid utxo ${utxo}`);
+    const descriptorAndIndex = discovery.getDescriptor({ utxo });
+    if (!descriptorAndIndex) throw new Error(`Unmatched ${utxo}`);
+    const txHex = discovery.getTxHex({ txId });
+    // It's free getting the tx from discovery (memoized). Pass it down:
+    const tx = discovery.getTransaction({ txId });
+    return {
+      ...descriptorAndIndex,
+      output: new Output({ ...descriptorAndIndex, network }),
+      tx,
+      txHex,
+      vout
+    };
+  });
+};
+
+//const EXPLORER = `https://tape.rewindbitcoin.com/explorer`;
 const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
 const explorer = new EsploraExplorer({ url: ESPLORA_API });
+const network = networks.regtest;
+const { Discovery } = DiscoveryFactory(explorer, network);
+
 const { wpkhBIP32 } = scriptExpressions;
 const { Output, BIP32 } = DescriptorsFactory(secp256k1);
-const network = networks.regtest;
 
 import type { Output } from 'bitcoinjs-lib/src/transaction';
 import { isWeb, JSONf, Log } from './utils';
 import {
-  createBackupChain,
-  createVaultChain,
-  getNextBackupIndex
+  createBackup,
+  createVault,
+  getNextBackupIndex,
+  type UtxosData
 } from './vaults';
 
 const start = async () => {
+  await explorer.connect();
+  const discovery = new Discovery();
+
   let mnemonic; //Let's create a basic wallet:
   let emergencyMnemonic; //Let's create a cold wallet (emergency):
   if (isWeb) {
@@ -66,26 +104,31 @@ Every reload reuses the same mnemonic for convenience.`);
     mnemonicToSeedSync(emergencyMnemonic),
     network
   );
-  const walletUTXO = new Output({
-    descriptor: wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/0' }),
-    network
-  });
-  const walletAddress = walletUTXO.getAddress();
-  Log(
-    `📫 Wallet address: <a href="${EXPLORER}/${walletAddress}" target="_blank">${walletAddress}</a>`
-  );
+  Log(`🔍 Fetching wallet...`);
+  const descriptors = [
+    wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/*' }),
+    wpkhBIP32({ masterNode, network, account: 0, keyPath: '/1/*' })
+  ];
+  if (!descriptors[0]) throw new Error();
+  await discovery.fetch({ descriptors });
 
   // Check if the wallet already has confirmed funds
-  Log(`🔍 Checking existing balance...`);
-  const walletAddressInfo = await explorer.fetchAddress(walletAddress);
-  Log(`🔍 Wallet balance info: ${JSONf(walletAddressInfo)}`);
-  let walletPrevTxId;
+  const utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
+  const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);
+  //const walletAddressInfo = await explorer.fetchAddress(walletAddress);
+  Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
+  //let walletPrevTxId;
 
-  if (walletAddressInfo.balance + walletAddressInfo.unconfirmedBalance < FEE) {
+  if (utxosAndBalance.balance < FEE) {
     Log(`💰 The wallet is empty. Let's request some funds...`);
     //New or empty wallet. Let's prepare the faucet request:
     const formData = new URLSearchParams();
-    formData.append('address', walletAddress);
+    const newWalletOutput = new Output({
+      descriptor: descriptors[0],
+      index: discovery.getNextIndex({ descriptor: descriptors[0] }),
+      network
+    });
+    formData.append('address', newWalletOutput.getAddress());
     const faucetRes = await fetch(FAUCET_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -102,36 +145,8 @@ Every reload reuses the same mnemonic for convenience.`);
         `Faucet rate-limit: this address has already received sats recently.
 Please retry (max 2 faucet requests per IP/address per minute).`
       );
-    walletPrevTxId = faucetJson.txId;
   } else {
     Log(`💰 Existing balance detected. Skipping faucet.`);
-    // Wallet has funds. Find the last transaction that actually pays to this script.
-    const txHistory = await explorer.fetchTxHistory({ address: walletAddress });
-    const spkHex = walletUTXO.getScriptPubKey().toString('hex');
-
-    for (const { txId } of txHistory.reverse()) {
-      const tx = Transaction.fromHex(await explorer.fetchTx(txId));
-      const vout = tx.outs.findIndex(o => o.script.toString('hex') === spkHex);
-      if (vout !== -1) {
-        walletPrevTxId = txId;
-        break;
-      }
-    }
-  }
-
-  let walletPrevTxHex = '';
-  while (true) {
-    // Ping the esplora for the txHex (may need to wait until the tx is indexed)
-    try {
-      walletPrevTxHex = await explorer.fetchTx(walletPrevTxId);
-      break;
-    } catch (err) {
-      void err;
-      Log(
-        `⏳ Waiting for the walletPrev tx <a href="${EXPLORER}/${walletPrevTxId}" target="_blank">${walletPrevTxId}</a> to be indexed...`
-      );
-    }
-    await new Promise(r => setTimeout(r, 1000)); //sleep 1s
   }
 
   const coldAddress = new Output({
@@ -143,39 +158,60 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     }),
     network
   }).getAddress();
-  const vaultChain = createVaultChain({
-    walletUTXO,
-    walletPrevTxHex,
+  const accounts = discovery.getUsedAccounts();
+  const mainAccount = accounts[0];
+  if (!mainAccount) throw new Error('Could not find the main account');
+  const changeDescriptor = mainAccount.replace(/\/0\/\*/g, '/1/*');
+  const changeDescriptorWithIndex = {
+    descriptor: changeDescriptor,
+    index: discovery.getNextIndex({
+      descriptor: changeDescriptor
+    })
+  };
+  const unvaultKey = keyExpressionBIP32({
+    masterNode,
+    originPath: "/0'",
+    keyPath: '/0'
+  });
+  const vault = createVault({
+    vaultedAmount: utxosAndBalance.balance - FEE - BACKUP_FUNDING, //FIXME: this must be smarter than this
+    unvaultKey,
+    feeRate: FEE_RATE,
+    utxosData,
     masterNode,
     coldAddress,
+    changeDescriptorWithIndex, //FIXME: recompute it if the backup used the change already
     network
   });
+  if (typeof vault === 'string') throw new Error(vault);
 
   const backupIndex = await getNextBackupIndex({
     masterNode,
     network,
     explorer
   });
+  //FIXME: another backup should go first, then remove the utxos used from the pool of available utxos and get the BACKUP_FUNDING used. Use DUMMY psbtTrigger and psbtPanic
   console.log(`Backup index tip: ${backupIndex}`);
-  const backupChain = createBackupChain({
+  const backup = createBackup({
     backupIndex,
+    feeRate: FEE_RATE,
     masterNode,
-    walletUTXO,
-    psbtTrigger: vaultChain.psbtTrigger,
-    psbtPanic: vaultChain.psbtPanic,
-    psbtVault: vaultChain.psbtVault,
-    fundingTxHex: vaultChain.psbtVault.extractTransaction().toHex(),
-    fundingVout: 1,
+    utxosData,
+    psbtTrigger: vault.psbtTrigger,
+    psbtPanic: vault.psbtPanic,
+    psbtVault: vault.psbtVault,
+    changeDescriptorWithIndex, //FIXME: this should be recomputed and different than the one for createVault
     network,
     tag: 'My First Vault'
   });
 
   console.log(`
-vault id: ${vaultChain.psbtVault.extractTransaction().getId()}
-trigger id: ${vaultChain.psbtTrigger.extractTransaction().getId()}
-commit id: ${backupChain.psbtCommit.extractTransaction().getId()}
-reveal id: ${backupChain.psbtReveal.extractTransaction().getId()}
+vault id: ${vault.psbtVault.extractTransaction().getId()}
+trigger id: ${vault.psbtTrigger.extractTransaction().getId()}
+commit id: ${backup.psbtCommit.extractTransaction().getId()}
+reveal id: ${backup.psbtReveal.extractTransaction().getId()}
 `);
+  explorer.close();
 };
 if (isWeb) (window as unknown as { start: typeof start }).start = start;
 
