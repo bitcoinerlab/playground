@@ -15,7 +15,7 @@ import {
 } from 'bitcoinjs-lib';
 import type { PsbtInput } from 'bip174/src/lib/interfaces';
 
-interface PsbtInputExtended extends PsbtInput, PsbtTxInput { }
+interface PsbtInputExtended extends PsbtInput, PsbtTxInput {}
 interface XOnlyPointAddTweakResult {
   parity: 1 | 0;
   xOnlyPubkey: Uint8Array;
@@ -492,8 +492,8 @@ export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
     }
 
     outputWeight(): number {
-      const OUTPUT_BYTES = 34 + 8; // scriptPubKey + amount
-      return OUTPUT_BYTES * 4;
+      // (script_pubKey_length:1) + (p2t2(OP_1 OP_PUSH32 <schnorr_public_key>):34) + (amount:8)
+      return 43 * 4;
     }
 
     isSegwit(): boolean | undefined {

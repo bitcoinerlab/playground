@@ -302,6 +302,7 @@ export const createVault = ({
   return { psbtVault, psbtTrigger, psbtPanic };
 };
 
+//FIXME: can't this use diswcovery?
 export const getNextBackupIndex = async ({
   masterNode,
   network,
@@ -333,6 +334,20 @@ export const getNextBackupIndex = async ({
     }
     index++;
   }
+};
+
+/**
+ * Estimates the virtual size of a reveal transaction spending an inscription
+ * to a single Taproot (P2TR) output.
+ */
+const getRevealVsize = (
+  inscription: InstanceType<typeof Inscription>
+): number => {
+  const REVEAL_TX_OVERHEAD_WEIGHT = 42;
+  const P2TR_OUTPUT_WEIGHT = 172; // 4 x [ (script_pubKey_length:1) + (p2t2(OP_1 OP_PUSH32 <schnorr_public_key>):34) + (amount:8) ]
+  const totalWeight =
+    REVEAL_TX_OVERHEAD_WEIGHT + inscription.inputWeight() + P2TR_OUTPUT_WEIGHT;
+  return Math.ceil(totalWeight / 4);
 };
 
 export const createBackup = ({
