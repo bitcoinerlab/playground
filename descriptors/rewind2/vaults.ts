@@ -302,7 +302,7 @@ export const createVault = ({
   return { psbtVault, psbtTrigger, psbtPanic };
 };
 
-//FIXME: can't this use diswcovery?
+//FIXME: can't this use discovery?
 export const getNextBackupIndex = async ({
   masterNode,
   network,
@@ -349,6 +349,12 @@ const getRevealVsize = (
     REVEAL_TX_OVERHEAD_WEIGHT + inscription.inputWeight() + P2TR_OUTPUT_WEIGHT;
   return Math.ceil(totalWeight / 4);
 };
+
+/**
+ * Minimum value (in satoshis) for a Taproot (P2TR) output to be considered
+ * non-dust and relayable by Bitcoin Core.
+ */
+const P2TR_DUST_THRESHOLD = 330;
 
 export const createBackup = ({
   backupIndex,

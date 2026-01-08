@@ -119,7 +119,7 @@ Every reload reuses the same mnemonic for convenience.`);
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   //let walletPrevTxId;
 
-  if (utxosAndBalance.balance < FEE) {
+  if (utxosAndBalance.balance < FEE) { //FIXME: request enough funds for the whole backup+vault+fees
     Log(`💰 The wallet is empty. Let's request some funds...`);
     //New or empty wallet. Let's prepare the faucet request:
     const formData = new URLSearchParams();
@@ -173,6 +173,15 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     originPath: "/0'",
     keyPath: '/0'
   });
+  //TODO: FIXME: strategy here should have been:
+  //is 1st: Create the vault and with the remaining
+  //utxos then create the backups so that the utxos don't interfere.
+  //however, wll need to know the expected backup sats needed so that we
+  //make sure the backup makles it into the blockchain.
+  //But this does not work since it's impossible to know the cost of the
+  //backup in advance since it will be done with the remainint utxos.
+  //Better do first a utxo-preselection for the backup using dummy pre-signed
+  //txs. That's better. Then use those utxos for the final backup.
   const vault = createVault({
     vaultedAmount: utxosAndBalance.balance - FEE - BACKUP_FUNDING, //FIXME: this must be smarter than this
     unvaultKey,
