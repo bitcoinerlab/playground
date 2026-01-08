@@ -10,15 +10,8 @@ export type UtxosData = Array<{
   output: OutputInstance;
 }>;
 
-import { Log } from './utils';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
-import {
-  networks,
-  Psbt,
-  Transaction,
-  type Network,
-  payments
-} from 'bitcoinjs-lib';
+import { networks, Psbt, Transaction, type Network } from 'bitcoinjs-lib';
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
 import {
@@ -33,7 +26,6 @@ import { encode as encodeVarInt, encodingLength } from 'varuint-bitcoin';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
 import { InscriptionsFactory } from './inscriptions';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
-import type { Explorer } from '@bitcoinerlab/explorer';
 import { coinselect, dustThreshold } from '@bitcoinerlab/coinselect';
 const { Inscription } = InscriptionsFactory(secp256k1);
 
@@ -302,40 +294,6 @@ export const createVault = ({
   return { psbtVault, psbtTrigger, psbtPanic };
 };
 
-//FIXME: can't this use discovery?
-export const getNextBackupIndex = async ({
-  masterNode,
-  network,
-  explorer
-}: {
-  masterNode: BIP32Interface;
-  network: Network;
-  explorer: Explorer;
-}): Promise<number> => {
-  let index = 0;
-  while (true) {
-    const path = getBackupPath(network, index);
-    const pubkey = masterNode.derivePath(path).publicKey;
-
-    // Predictable BIP86 address (Key-path spend)
-    const { address } = payments.p2tr({
-      internalPubkey: pubkey.subarray(1, 33), //to x-only
-      network
-    });
-
-    if (!address) throw new Error('Could not derive address');
-
-    Log(`Checking discovery marker at index ${index}: ${address}...`);
-    const { txCount } = await explorer.fetchAddress(address);
-
-    if (txCount === 0) {
-      Log(`Next available backup index: ${index}`);
-      return index;
-    }
-    index++;
-  }
-};
-
 /**
  * Estimates the virtual size of a reveal transaction spending an inscription
  * to a single Taproot (P2TR) output.
@@ -380,6 +338,12 @@ export const createBackup = ({
   changeDescriptorWithIndex: { descriptor: string; index: number };
   tag?: string;
 }) => {
+  const fundingUtxo = utxosData[0];
+  if (!fundingUtxo) throw new Error('No UTXOs provided for backup funding');
+  const walletUTXO = fundingUtxo.output;
+  const fundingTxHex = fundingUtxo.txHex;
+  const fundingVout = fundingUtxo.vout;
+
   const vaultTxId = psbtVault.extractTransaction().getHash();
   const triggerTx = psbtTrigger.extractTransaction().toBuffer();
   const panicTx = psbtPanic.extractTransaction().toBuffer();

@@ -54,17 +54,12 @@ const explorer = new EsploraExplorer({ url: ESPLORA_API });
 const network = networks.regtest;
 const { Discovery } = DiscoveryFactory(explorer, network);
 
-const { wpkhBIP32 } = scriptExpressions;
+const { wpkhBIP32, trBIP32 } = scriptExpressions;
 const { Output, BIP32 } = DescriptorsFactory(secp256k1);
 
 import type { Output } from 'bitcoinjs-lib/src/transaction';
 import { isWeb, JSONf, Log } from './utils';
-import {
-  createBackup,
-  createVault,
-  getNextBackupIndex,
-  type UtxosData
-} from './vaults';
+import { createBackup, createVault, type UtxosData } from './vaults';
 
 const start = async () => {
   await explorer.connect();
@@ -105,6 +100,12 @@ Every reload reuses the same mnemonic for convenience.`);
     network
   );
   Log(`🔍 Fetching wallet...`);
+  const backupDescriptor = trBIP32({
+    masterNode,
+    network,
+    account: 0,
+    keyPath: '/9/*'
+  });
   const descriptors = [
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/*' }),
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/1/*' })
@@ -119,7 +120,8 @@ Every reload reuses the same mnemonic for convenience.`);
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   //let walletPrevTxId;
 
-  if (utxosAndBalance.balance < FEE) { //FIXME: request enough funds for the whole backup+vault+fees
+  if (utxosAndBalance.balance < FEE) {
+    //FIXME: request enough funds for the whole backup+vault+fees
     Log(`💰 The wallet is empty. Let's request some funds...`);
     //New or empty wallet. Let's prepare the faucet request:
     const formData = new URLSearchParams();
@@ -194,11 +196,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   });
   if (typeof vault === 'string') throw new Error(vault);
 
-  const backupIndex = await getNextBackupIndex({
-    masterNode,
-    network,
-    explorer
-  });
+  const backupIndex = discovery.getNextIndex({ descriptor: backupDescriptor });
   //FIXME: another backup should go first, then remove the utxos used from the pool of available utxos and get the BACKUP_FUNDING used. Use DUMMY psbtTrigger and psbtPanic
   console.log(`Backup index tip: ${backupIndex}`);
   const backup = createBackup({
