@@ -107,6 +107,7 @@ import type { Output } from 'bitcoinjs-lib/src/transaction';
 import { isWeb, JSONf, Log } from './utils';
 import {
   BACKUP_TX_VBYTES,
+  VAULT_TX_VBYTES,
   //createInscriptionBackup,
   createOpReturnBackup,
   createVault,
@@ -265,9 +266,12 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   //backup in advance since it will be done with the remainint utxos.
   //Better do first a utxo-preselection for the backup using dummy pre-signed
   //txs. That's better. Then use those utxos for the final backup.
+  const vaultFee = Math.ceil(
+    Math.max(...VAULT_TX_VBYTES.withChange) * FEE_RATE
+  );
   const backupValue = Math.ceil(Math.max(...BACKUP_TX_VBYTES) * FEE_RATE);
   const vault = createVault({
-    vaultedAmount: utxosAndBalance.balance - backupValue - FEE, //FIXME: this must be smarter than this
+    vaultedAmount: utxosAndBalance.balance - vaultFee - backupValue,
     unvaultKey,
     feeRate: FEE_RATE,
     utxosData,
