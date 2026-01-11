@@ -295,7 +295,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     backupOutputIndex,
     backupFee,
     randomMasterNode,
-    tag: 'My First Vault',
     network
   });
 

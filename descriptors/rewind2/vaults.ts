@@ -63,42 +63,29 @@ export const getBackupDescriptor = ({
 };
 
 /**
- * Serializes a single vault entry into RAF v1 TLV format.
- * Format: [Type 0x01][PayloadLen][VaultTxId][TriggerLen][Trigger][PanicLen][Panic][TagLen][Tag]
+ * Serializes a vault entry into a compact TLV-like format.
+ * Format: [Version][TriggerLen][Trigger][PanicLen][Panic]
  */
 const serializeVaultEntry = ({
-  vaultTxId,
   triggerTx,
-  panicTx,
-  tag
+  panicTx
 }: {
-  vaultTxId: Buffer;
   triggerTx: Buffer;
   panicTx: Buffer;
-  tag?: string;
 }) => {
-  const tagBuffer = tag ? Buffer.from(tag, 'utf8') : Buffer.alloc(0);
-
+  const ENTRY_VERSION = 1;
   const encVI = (n: number) => {
     const b = Buffer.allocUnsafe(encodingLength(n));
     encodeVarInt(n, b);
     return b;
   };
 
-  const payload = Buffer.concat([
-    vaultTxId, // 32 bytes
+  return Buffer.concat([
+    Buffer.from([ENTRY_VERSION]),
     encVI(triggerTx.length),
     triggerTx,
     encVI(panicTx.length),
-    panicTx,
-    encVI(tagBuffer.length),
-    tagBuffer
-  ]);
-
-  return Buffer.concat([
-    Buffer.from([0x01]), // Type: Vault
-    encVI(payload.length),
-    payload
+    panicTx
   ]);
 };
 
@@ -387,7 +374,6 @@ export const createOpReturnBackup = ({
   backupOutputIndex,
   backupFee,
   randomMasterNode,
-  tag,
   network
 }: {
   psbtTrigger: Psbt;
@@ -396,7 +382,6 @@ export const createOpReturnBackup = ({
   backupOutputIndex: number;
   backupFee: number;
   randomMasterNode: BIP32Interface;
-  tag?: string;
   network: Network;
 }) => {
   const vaultTx = psbtVault.extractTransaction();
@@ -405,12 +390,10 @@ export const createOpReturnBackup = ({
   const panicTx = psbtPanic.extractTransaction().toBuffer();
 
   const entry = serializeVaultEntry({
-    vaultTxId,
     triggerTx,
-    panicTx,
-    ...(tag ? { tag } : {})
+    panicTx
   });
-  const header = Buffer.from('REW\x01'); // Magic + Version 1
+  const header = Buffer.from('REW'); // Magic
   const content = Buffer.concat([header, entry]);
 
   const psbtBackup = new Psbt({ network }); // Use same network
@@ -461,10 +444,8 @@ export const createInscriptionBackup = ({
   utxosData,
   psbtTrigger,
   psbtPanic,
-  psbtVault,
   network,
-  changeDescriptorWithIndex,
-  tag
+  changeDescriptorWithIndex
 }: {
   backupIndex: number;
   feeRate: number;
@@ -473,22 +454,17 @@ export const createInscriptionBackup = ({
   utxosData: UtxosData;
   psbtTrigger: Psbt;
   psbtPanic: Psbt;
-  psbtVault: Psbt;
   network: Network;
   changeDescriptorWithIndex: { descriptor: string; index: number };
-  tag?: string;
 }) => {
-  const vaultTxId = psbtVault.extractTransaction().getHash();
   const triggerTx = psbtTrigger.extractTransaction().toBuffer();
   const panicTx = psbtPanic.extractTransaction().toBuffer();
 
   const entry = serializeVaultEntry({
-    vaultTxId,
     triggerTx,
-    panicTx,
-    ...(tag ? { tag } : {})
+    panicTx
   });
-  const header = Buffer.from('REW\x01'); // Magic + Version 1
+  const header = Buffer.from('REW'); // Magic
   const content = Buffer.concat([header, entry]);
 
   const backupPath = getBackupPath(network, backupIndex);
