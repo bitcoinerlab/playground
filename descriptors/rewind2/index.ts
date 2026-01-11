@@ -175,10 +175,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       );
     for (let attempt = 1; attempt <= FAUCET_FETCH_RETRIES; attempt += 1) {
       await discovery.fetch({ descriptors });
-      const history = discovery.getHistory({
-        descriptors,
-        txStatus: TxStatus.ALL
-      });
+      const history = discovery.getHistory({ descriptors });
       if (history.length > initialHistoryLength) {
         Log('✅ Faucet transaction detected.');
         break;
@@ -188,13 +185,9 @@ Please retry (max 2 faucet requests per IP/address per minute).`
           `⏳ Waiting for faucet transaction... (${attempt}/${FAUCET_FETCH_RETRIES})`
         );
         await wait(FAUCET_FETCH_DELAY_MS);
-      } else {
-        Log('⚠️ Faucet transaction not detected yet. Continuing.');
-      }
+      } else Log('⚠️ Faucet transaction not detected yet. Continuing.');
     }
-  } else {
-    Log(`💰 Existing balance detected. Skipping faucet.`);
-  }
+  } else Log(`💰 Existing balance detected. Skipping faucet.`);
 
   utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
   const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);

@@ -250,8 +250,17 @@ export const createVault = ({
   if (feeRateVault < 1) return 'UNKNOWN_ERROR';
 
   //////////////////////
-  // Trigger:
+  // Trigger (135 vB):
+  // 1 P2WPKH input, 2 outputs (P2A + P2WSH).
+  // - Stripped size: 107 bytes
+  //   - Version 4 + vin 1 + input 41 + vout 1 + outputs 56 + locktime 4
+  //   - Outputs = P2A (13) + P2WSH (43)
+  // - Witness size: 110–112 bytes
+  //   - Marker/flag 2
+  //   - Stack items: sig (73–75 incl. length) + pubkey (34 incl. length) + count (1)
+  // - Weight: 538–540 wu → vsize = always 135 vB
   //////////////////////
+
   const panicKey = randomKey;
   const triggerDescriptor = createTriggerDescriptor({
     unvaultKey,
@@ -288,10 +297,19 @@ export const createVault = ({
   });
   triggerInputFinalizer({ psbt: psbtTrigger });
   const triggerVsize = psbtTrigger.extractTransaction(true).virtualSize();
-  console.log(`trigger vsize: ${triggerVsize}`);
+  if (triggerVsize !== 135)
+    throw new Error(`Unexpected trigger vsize: ${triggerVsize}`);
 
   //////////////////////
-  // Panic:
+  // Panic (139-140 vB):
+  // 1 P2WSH input, 2 outputs (P2A + addr).
+  // - Stripped size: 95 bytes
+  //  - Version 4 + vin 1 + input 41 + vout 1 + outputs 44 + locktime 4
+  //  - Outputs = P2A (13) + P2WPKH (31)
+  //- Witness size: ~174–176 bytes
+  //  - Marker/flag 2
+  //  - Stack items: sig (73–75 incl. length) + selector (2) + witnessScript (≈96–98 incl. length) + count (1)
+  //- Weight: ~554–558 wu → vsize = 139–140 vB
   //////////////////////
 
   const psbtPanic = new Psbt({ network });
@@ -303,7 +321,7 @@ export const createVault = ({
     vout: 1
   });
   const coldOutput = new Output({
-    descriptor: `addr(${coldAddress}`,
+    descriptor: `addr(${coldAddress})`,
     network
   });
   coldOutput.updatePsbtAsOutput({ psbt: psbtPanic, value: vaultedAmount });
@@ -313,7 +331,8 @@ export const createVault = ({
   });
   panicInputFinalizer({ psbt: psbtPanic });
   const panicVsize = psbtPanic.extractTransaction(true).virtualSize();
-  console.log(`panic vsize: ${panicVsize}`);
+  if (panicVsize < 139 || panicVsize > 140)
+    throw new Error(`Unexpected panic vsize: ${panicVsize}`);
 
   return {
     psbtVault,
