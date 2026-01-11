@@ -89,6 +89,20 @@ const serializeVaultEntry = ({
   ]);
 };
 
+/**
+ * Estimated vbytes for the backup tx (1 P2WPKH input, 1 OP_RETURN output).
+ *
+ * - Trigger tx size: 217–219 bytes (107 stripped + 110–112 witness).
+ * - Panic tx size: 269–271 bytes (95 stripped + 174–176 witness).
+ * - Serialized entry size: 1 (version) + 1 (trigger len) + trigger + 1 (panic len) + panic.
+ * - OP_RETURN payload: 3 ("REW") + entry = 492–496 bytes → OP_PUSHDATA2.
+ * - Script size: 1 (OP_RETURN) + 1 (OP_PUSHDATA2) + 2 (len) + payload = 496–500 bytes.
+ * - Stripped tx size: 4 + 1 + 41 + 1 + output(8 + 3 + script) + 4 = 558–562 bytes.
+ * - Witness size: 109–111 bytes (segwit marker/flag + count + sig(71–73) + pubkey).
+ * - vbytes = ceil((stripped*4 + witness) / 4) = 586–590 vB.
+ */
+export const BACKUP_TX_VBYTES = [586, 587, 588, 589, 590];
+
 const createTriggerDescriptor = ({
   unvaultKey,
   panicKey,
