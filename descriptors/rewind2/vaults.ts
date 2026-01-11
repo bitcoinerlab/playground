@@ -103,6 +103,23 @@ const serializeVaultEntry = ({
  */
 export const BACKUP_TX_VBYTES = [586, 587, 588, 589, 590];
 
+/**
+ * Estimated vbytes for the vault tx (1 P2WPKH input, 2–3 P2WPKH outputs).
+ *
+ * - Without change (vault + backup outputs):
+ *   - Stripped size: 4 + 1 + 41 + 1 + (31 * 2) + 4 = 113 bytes.
+ *   - Witness size: 109–111 bytes (segwit marker/flag + count + sig(71–73) + pubkey).
+ *   - vbytes = ceil((113*4 + 109–111) / 4) = 141 vB.
+ * - With change (vault + backup + change outputs):
+ *   - Stripped size: 4 + 1 + 41 + 1 + (31 * 3) + 4 = 144 bytes.
+ *   - Witness size: 109–111 bytes.
+ *   - vbytes = ceil((144*4 + 109–111) / 4) = 172 vB.
+ */
+export const VAULT_TX_VBYTES = {
+  withoutChange: [141],
+  withChange: [172]
+};
+
 const createTriggerDescriptor = ({
   unvaultKey,
   panicKey,
