@@ -192,7 +192,6 @@ export const createVault = ({
   coldAddress,
   changeDescriptorWithIndex,
   network,
-  backupValue,
   vaultIndex
 }: {
   vaultedAmount: number;
@@ -204,7 +203,6 @@ export const createVault = ({
   coldAddress: string;
   changeDescriptorWithIndex: { descriptor: string; index: number };
   network: Network;
-  backupValue: number;
   vaultIndex: number;
 }) => {
   const randomMnemonic = generateMnemonic();
@@ -229,6 +227,7 @@ export const createVault = ({
     descriptor: getBackupDescriptor({ masterNode, network, index: vaultIndex }),
     network
   });
+  const backupValue = Math.ceil(Math.max(...BACKUP_TX_VBYTES) * feeRate);
   // Run the coinselector
   const selected = coinselectUtxosData({
     utxosData,
@@ -252,6 +251,7 @@ export const createVault = ({
       'coinselect outputs should be vault, backup, and change at most'
     );
   const psbtVault = new Psbt({ network });
+  psbtVault.setVersion(3);
 
   //Add the inputs to psbtVault:
   const vaultFinalizers = [];
@@ -411,7 +411,7 @@ export const createOpReturnBackup = ({
   const content = Buffer.concat([header, entry]);
 
   const psbtBackup = new Psbt({ network }); // Use same network
-  psbtBackup.setVersion(2);
+  psbtBackup.setVersion(3);
 
   // Input: The output from the vault
   psbtBackup.addInput({
@@ -433,6 +433,9 @@ export const createOpReturnBackup = ({
 
   signers.signBIP32({ psbt: psbtBackup, masterNode: randomMasterNode });
   psbtBackup.finalizeAllInputs();
+  const backupVsize = psbtBackup.extractTransaction(true).virtualSize();
+  if (!BACKUP_TX_VBYTES.includes(backupVsize))
+    throw new Error(`Unexpected backup vsize: ${backupVsize}`);
 
   return psbtBackup;
 };

@@ -41,7 +41,6 @@ import {
 const FEE = 500; //FIXME: dynamic - also duplicated on index.ts and vaults.ts - better use FEE_RATE
 //FIXME: this still needs a mechanism to keep some margin for not to spend from the wallet: the max expected fee in future for (trigger+panic) x nActiveVaults
 const FEE_RATE = 2.0;
-const BACKUP_FUNDING = 1500; //FIXME: dynamic
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
 const FAUCET_FETCH_DELAY_MS = 1500;
@@ -107,6 +106,7 @@ const { Output, BIP32 } = DescriptorsFactory(secp256k1);
 import type { Output } from 'bitcoinjs-lib/src/transaction';
 import { isWeb, JSONf, Log } from './utils';
 import {
+  BACKUP_TX_VBYTES,
   //createInscriptionBackup,
   createOpReturnBackup,
   createVault,
@@ -265,8 +265,9 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   //backup in advance since it will be done with the remainint utxos.
   //Better do first a utxo-preselection for the backup using dummy pre-signed
   //txs. That's better. Then use those utxos for the final backup.
+  const backupValue = Math.ceil(Math.max(...BACKUP_TX_VBYTES) * FEE_RATE);
   const vault = createVault({
-    vaultedAmount: utxosAndBalance.balance - FEE - BACKUP_FUNDING, //FIXME: this must be smarter than this
+    vaultedAmount: utxosAndBalance.balance - backupValue - FEE, //FIXME: this must be smarter than this
     unvaultKey,
     feeRate: FEE_RATE,
     utxosData,
@@ -274,7 +275,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     coldAddress,
     changeDescriptorWithIndex, //FIXME: recompute it if the backup used the change already
     network,
-    backupValue: BACKUP_FUNDING,
     vaultIndex
   });
   if (typeof vault === 'string') throw new Error(vault);
