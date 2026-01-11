@@ -298,8 +298,15 @@ export const createVault = ({
   //Finalize
   vaultFinalizers.forEach(finalizer => finalizer({ psbt: psbtVault }));
   const txVault = psbtVault.extractTransaction(true);
-  if (txVault.virtualSize() > selected.vsize)
+  const vaultVsize = txVault.virtualSize();
+  if (vaultVsize > selected.vsize)
     throw new Error('vsize larger than coinselected estimated one');
+  const expectedVaultVbytes =
+    vaultTargets.length > 2
+      ? VAULT_TX_VBYTES.withChange
+      : VAULT_TX_VBYTES.withoutChange;
+  if (!expectedVaultVbytes.includes(vaultVsize))
+    throw new Error(`Unexpected vault vsize: ${vaultVsize}`);
   const feeRateVault = vaultMiningFee / txVault.virtualSize();
   if (feeRateVault < 1) return 'UNKNOWN_ERROR';
 
