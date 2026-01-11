@@ -42,6 +42,7 @@ const FEE = 500; //FIXME: dynamic - also duplicated on index.ts and vaults.ts - 
 //FIXME: this still needs a mechanism to keep some margin for not to spend from the wallet: the max expected fee in future for (trigger+panic) x nActiveVaults
 const FEE_RATE = 2.0;
 const BACKUP_FUNDING = 1500; //FIXME: dynamic
+const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
 const FAUCET_FETCH_DELAY_MS = 1500;
 
@@ -70,6 +71,29 @@ export const getUtxosData = (
   });
 };
 
+const getNextVaultIndex = ({
+  discovery,
+  descriptor
+}: {
+  discovery: DiscoveryInstance;
+  descriptor: string;
+}) => {
+  const { txoMap } = discovery.getUtxosAndBalance({
+    descriptor,
+    txStatus: TxStatus.ALL
+  });
+  const usedIndices = new Set<number>();
+  for (const indexedDescriptor of Object.values(txoMap)) {
+    const indexPart = indexedDescriptor.split('~')[1];
+    if (!indexPart || indexPart === 'non-ranged') continue;
+    const parsedIndex = Number.parseInt(indexPart, 10);
+    if (!Number.isNaN(parsedIndex)) usedIndices.add(parsedIndex);
+  }
+  let nextIndex = 0;
+  while (usedIndices.has(nextIndex)) nextIndex += 1;
+  return nextIndex;
+};
+
 //const EXPLORER = `https://tape.rewindbitcoin.com/explorer`;
 const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
@@ -86,6 +110,7 @@ import {
   //createInscriptionBackup,
   createOpReturnBackup,
   createVault,
+  getBackupDescriptor,
   type UtxosData
 } from './vaults';
 
@@ -193,6 +218,20 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);
   Log(`🔍 Updated wallet balance: ${utxosAndBalance.balance}`);
 
+  const backupDescriptor = getBackupDescriptor({
+    masterNode,
+    network,
+    index: '*'
+  });
+  await discovery.fetch({
+    descriptor: backupDescriptor,
+    gapLimit: VAULT_GAP_LIMIT
+  });
+  const vaultIndex = getNextVaultIndex({
+    discovery,
+    descriptor: backupDescriptor
+  });
+
   const coldAddress = new Output({
     descriptor: wpkhBIP32({
       masterNode: emergencyMasterNode,
@@ -234,7 +273,9 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     masterNode,
     coldAddress,
     changeDescriptorWithIndex, //FIXME: recompute it if the backup used the change already
-    network
+    network,
+    backupValue: BACKUP_FUNDING,
+    vaultIndex
   });
   if (typeof vault === 'string') throw new Error(vault);
 

@@ -2,6 +2,7 @@
 const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
 const LOCK_BLOCKS = 2;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
+const VAULT_PURPOSE = 1073;
 
 export type UtxosData = Array<{
   tx: Transaction;
@@ -38,6 +39,27 @@ const { Inscription } = InscriptionsFactory(secp256k1);
 const getBackupPath = (network: Network, index: number): string => {
   const coinType = network === networks.bitcoin ? "0'" : "1'";
   return `m/86'/${coinType}/0'/9/${index}`;
+};
+
+export const getVaultOriginPath = (network: Network) =>
+  `/${VAULT_PURPOSE}'/${network === networks.bitcoin ? 0 : 1}'/0'`;
+
+export const getBackupDescriptor = ({
+  masterNode,
+  network,
+  index
+}: {
+  masterNode: BIP32Interface;
+  network: Network;
+  index: number | '*';
+}) => {
+  const keyPath = index === '*' ? '/*' : `/${index}`;
+  const keyExpression = keyExpressionBIP32({
+    masterNode,
+    originPath: getVaultOriginPath(network),
+    keyPath
+  });
+  return `wpkh(${keyExpression})`;
 };
 
 /**
@@ -168,7 +190,9 @@ export const createVault = ({
   masterNode,
   coldAddress,
   changeDescriptorWithIndex,
-  network
+  network,
+  backupValue,
+  vaultIndex
 }: {
   vaultedAmount: number;
   /** The unvault key expression that must be used to create triggerDescriptor */
@@ -179,6 +203,8 @@ export const createVault = ({
   coldAddress: string;
   changeDescriptorWithIndex: { descriptor: string; index: number };
   network: Network;
+  backupValue: number;
+  vaultIndex: number;
 }) => {
   const randomMnemonic = generateMnemonic();
 
@@ -198,12 +224,18 @@ export const createVault = ({
   ).publicKey;
   const vaultOutput = new Output({ descriptor: `wpkh(${randomKey})`, network });
   const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
+  const backupOutput = new Output({
+    descriptor: getBackupDescriptor({ masterNode, network, index: vaultIndex }),
+    network
+  });
   // Run the coinselector
   const selected = coinselectUtxosData({
     utxosData,
     targetOutput: vaultOutput,
     targetValue: vaultedAmount,
     changeOutput,
+    backupOutput,
+    backupValue,
     feeRate
   });
   if (!selected) return 'COINSELECT_ERROR';
@@ -212,8 +244,12 @@ export const createVault = ({
   const vaultMiningFee = selected.fee;
   if (vaultTargets[0]?.output !== vaultOutput)
     throw new Error("coinselect first output should be the vault's output");
-  if (vaultTargets.length > 2)
-    throw new Error('coinselect ouputs should be vault and fee at most');
+  if (vaultTargets[1]?.output !== backupOutput)
+    throw new Error('coinselect second output should be the backup output');
+  if (vaultTargets.length > 3)
+    throw new Error(
+      'coinselect outputs should be vault, backup, and change at most'
+    );
   const psbtVault = new Psbt({ network });
 
   //Add the inputs to psbtVault:
@@ -235,10 +271,10 @@ export const createVault = ({
     });
   }
   const backupOutputIndex = vaultTargets.findIndex(
-    target => target.output === changeOutput
+    target => target.output === backupOutput
   );
   const backupFee = vaultTargets[backupOutputIndex]?.value;
-  if (backupOutputIndex < 0 || !backupFee) return 'UNKNOWN_ERROR';
+  if (backupOutputIndex < 0 || backupFee === undefined) return 'UNKNOWN_ERROR';
   //Sign
   signers.signBIP32({ psbt: psbtVault, masterNode });
   //Finalize
