@@ -74,14 +74,18 @@ flowchart LR
     V --> C
     style C fill:transparent,stroke:transparent
 
-    %% Trigger Tx single output
+    %% Trigger Tx outputs
     T --> F
+    T --> A_T[P2A]
+    style A_T fill:transparent,stroke:transparent
 
     %% Forked outputs
     F --> P[Panic Tx<br/>*can be pushed before timelock*]
     F --> UTXON
 
-    %% Panic Tx output
+    %% Panic Tx outputs
     P --> E[Emergency UTXO]
     style E fill:transparent,stroke:transparent
+    P --> A_P[P2A]
+    style A_P fill:transparent,stroke:transparent
 ```
