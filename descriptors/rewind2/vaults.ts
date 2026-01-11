@@ -201,8 +201,8 @@ export const createVault = ({
   // Run the coinselector
   const selected = coinselectUtxosData({
     utxosData,
-    targetValue: vaultedAmount,
     targetOutput: vaultOutput,
+    targetValue: vaultedAmount,
     changeOutput,
     feeRate
   });
@@ -287,6 +287,8 @@ export const createVault = ({
     masterNode: randomMasterNode
   });
   triggerInputFinalizer({ psbt: psbtTrigger });
+  const triggerVsize = psbtTrigger.extractTransaction(true).virtualSize();
+  console.log(`trigger vsize: ${triggerVsize}`);
 
   //////////////////////
   // Panic:
@@ -310,6 +312,8 @@ export const createVault = ({
     masterNode: randomMasterNode
   });
   panicInputFinalizer({ psbt: psbtPanic });
+  const panicVsize = psbtPanic.extractTransaction(true).virtualSize();
+  console.log(`panic vsize: ${panicVsize}`);
 
   return {
     psbtVault,

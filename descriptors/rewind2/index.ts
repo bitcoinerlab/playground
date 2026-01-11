@@ -34,6 +34,7 @@ import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { EsploraExplorer } from '@bitcoinerlab/explorer';
 import {
   DiscoveryFactory,
+  TxStatus,
   type DiscoveryInstance
 } from '@bitcoinerlab/discovery';
 
@@ -41,6 +42,8 @@ const FEE = 500; //FIXME: dynamic - also duplicated on index.ts and vaults.ts - 
 //FIXME: this still needs a mechanism to keep some margin for not to spend from the wallet: the max expected fee in future for (trigger+panic) x nActiveVaults
 const FEE_RATE = 2.0;
 const BACKUP_FUNDING = 1500; //FIXME: dynamic
+const FAUCET_FETCH_RETRIES = 10;
+const FAUCET_FETCH_DELAY_MS = 1500;
 
 export const getUtxosData = (
   utxos: Array<string>,
@@ -166,6 +169,7 @@ Every reload reuses the same mnemonic for convenience.`);
         `Faucet rate-limit: this address has already received sats recently.
 Please retry (max 2 faucet requests per IP/address per minute).`
       );
+    await discovery.fetch({ descriptors });
   } else {
     Log(`💰 Existing balance detected. Skipping faucet.`);
   }
