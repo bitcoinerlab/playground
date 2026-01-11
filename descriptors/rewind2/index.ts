@@ -1,6 +1,26 @@
 // Copyright (c) 2025 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
 
+//core 30 submit package limitations: https://bitcoincore.org/en/doc/30.0.0/rpc/rawtransactions/submitpackage/
+//use op_return instrad of inscriptions? This way we can make sure the backup
+//is processed (as a package) together with the vault: https://bitcoin.stackexchange.com/questions/126208/why-would-anyone-use-op-return-over-inscriptions-aside-from-fees
+//
+//TODO: use OP_RETURN:
+/*import * as bitcoin from 'bitcoinjs-lib';
+
+const network = bitcoin.networks.bitcoin; // or testnet
+
+const psbt = new bitcoin.Psbt({ network });
+
+const data = Buffer.from('hello world', 'utf8');
+
+const embed = bitcoin.payments.embed({ data: [data] });
+
+psbt.addOutput({
+  script: embed.output,
+  value: 0
+});
+*/
 import './codesandboxFixes';
 import { readFileSync, writeFileSync } from 'fs';
 import {
@@ -54,12 +74,17 @@ const explorer = new EsploraExplorer({ url: ESPLORA_API });
 const network = networks.regtest;
 const { Discovery } = DiscoveryFactory(explorer, network);
 
-const { wpkhBIP32, trBIP32 } = scriptExpressions;
+const { wpkhBIP32 } = scriptExpressions;
 const { Output, BIP32 } = DescriptorsFactory(secp256k1);
 
 import type { Output } from 'bitcoinjs-lib/src/transaction';
 import { isWeb, JSONf, Log } from './utils';
-import { createBackup, createVault, type UtxosData } from './vaults';
+import {
+  //createInscriptionBackup,
+  createOpReturnBackup,
+  createVault,
+  type UtxosData
+} from './vaults';
 
 const start = async () => {
   await explorer.connect();
@@ -100,12 +125,6 @@ Every reload reuses the same mnemonic for convenience.`);
     network
   );
   Log(`🔍 Fetching wallet...`);
-  const backupDescriptor = trBIP32({
-    masterNode,
-    network,
-    account: 0,
-    keyPath: '/9/*'
-  });
   const descriptors = [
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/*' }),
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/1/*' })
@@ -196,27 +215,30 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   });
   if (typeof vault === 'string') throw new Error(vault);
 
-  const backupIndex = discovery.getNextIndex({ descriptor: backupDescriptor });
-  //FIXME: another backup should go first, then remove the utxos used from the pool of available utxos and get the BACKUP_FUNDING used. Use DUMMY psbtTrigger and psbtPanic
-  console.log(`Backup index tip: ${backupIndex}`);
-  const backup = createBackup({
-    backupIndex,
-    feeRate: FEE_RATE,
-    masterNode,
-    utxosData,
-    psbtTrigger: vault.psbtTrigger,
-    psbtPanic: vault.psbtPanic,
-    psbtVault: vault.psbtVault,
-    changeDescriptorWithIndex, //FIXME: this should be recomputed and different than the one for createVault
-    network,
-    tag: 'My First Vault'
+  const {
+    psbtVault,
+    psbtTrigger,
+    psbtPanic,
+    backupOutputIndex,
+    backupFee,
+    randomMasterNode
+  } = vault; //FIXME: fix types later
+
+  const psbtBackup = createOpReturnBackup({
+    psbtTrigger,
+    psbtPanic,
+    psbtVault,
+    backupOutputIndex,
+    backupFee,
+    randomMasterNode,
+    tag: 'My First Vault',
+    network
   });
 
   console.log(`
-vault id: ${vault.psbtVault.extractTransaction().getId()}
-trigger id: ${vault.psbtTrigger.extractTransaction().getId()}
-commit id: ${backup.psbtCommit.extractTransaction().getId()}
-reveal id: ${backup.psbtReveal.extractTransaction().getId()}
+vault id: ${psbtVault.extractTransaction().getId()}
+trigger id: ${psbtTrigger.extractTransaction().getId()}
+backup id: ${psbtBackup.extractTransaction().getId()}
 `);
   explorer.close();
 };

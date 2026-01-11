@@ -1,4 +1,4 @@
-const FEE = 500; //FIXME: dynamic - also duplicated on index.ts and vaults.ts - better use FEE_RATE
+//const FEE = 500; //FIXME: dynamic - also duplicated on index.ts and vaults.ts - better use FEE_RATE
 const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
 const LOCK_BLOCKS = 2;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
@@ -11,7 +11,13 @@ export type UtxosData = Array<{
 }>;
 
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
-import { networks, Psbt, Transaction, type Network } from 'bitcoinjs-lib';
+import {
+  networks,
+  Psbt,
+  Transaction,
+  type Network,
+  payments
+} from 'bitcoinjs-lib';
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
 import {
@@ -219,6 +225,11 @@ export const createVault = ({
       value: target.value
     });
   }
+  const backupOutputIndex = vaultTargets.findIndex(
+    target => target.output === changeOutput
+  );
+  const backupFee = vaultTargets[backupOutputIndex]?.value;
+  if (backupOutputIndex < 0 || !backupFee) return 'UNKNOWN_ERROR';
   //Sign
   signers.signBIP32({ psbt: psbtVault, masterNode });
   //Finalize
@@ -291,7 +302,74 @@ export const createVault = ({
   });
   panicInputFinalizer({ psbt: psbtPanic });
 
-  return { psbtVault, psbtTrigger, psbtPanic };
+  return {
+    psbtVault,
+    psbtTrigger,
+    psbtPanic,
+    backupOutputIndex,
+    backupFee,
+    randomMasterNode
+  };
+};
+
+export const createOpReturnBackup = ({
+  psbtTrigger,
+  psbtPanic,
+  psbtVault,
+  backupOutputIndex,
+  backupFee,
+  randomMasterNode,
+  tag,
+  network
+}: {
+  psbtTrigger: Psbt;
+  psbtPanic: Psbt;
+  psbtVault: Psbt;
+  backupOutputIndex: number;
+  backupFee: number;
+  randomMasterNode: BIP32Interface;
+  tag?: string;
+  network: Network;
+}) => {
+  const vaultTx = psbtVault.extractTransaction();
+  const vaultTxId = vaultTx.getHash();
+  const triggerTx = psbtTrigger.extractTransaction().toBuffer();
+  const panicTx = psbtPanic.extractTransaction().toBuffer();
+
+  const entry = serializeVaultEntry({
+    vaultTxId,
+    triggerTx,
+    panicTx,
+    ...(tag ? { tag } : {})
+  });
+  const header = Buffer.from('REW\x01'); // Magic + Version 1
+  const content = Buffer.concat([header, entry]);
+
+  const psbtBackup = new Psbt({ network }); // Use same network
+  psbtBackup.setVersion(2);
+
+  // Input: The output from the vault
+  psbtBackup.addInput({
+    hash: vaultTxId,
+    index: backupOutputIndex,
+    witnessUtxo: {
+      script: vaultTx.outs[backupOutputIndex]?.script!,
+      value: backupFee
+    }
+  });
+
+  // Output: OP_RETURN
+  const embed = payments.embed({ data: [content] });
+  if (!embed.output) throw new Error('Could not create embed output');
+  psbtBackup.addOutput({
+    script: embed.output,
+    value: 0
+  });
+
+  signers.signBIP32({ psbt: psbtBackup, masterNode: randomMasterNode });
+  psbtBackup.finalizeAllInputs();
+
+  return psbtBackup;
 };
 
 /**
@@ -308,13 +386,7 @@ const getRevealVsize = (
   return Math.ceil(totalWeight / 4);
 };
 
-/**
- * Minimum value (in satoshis) for a Taproot (P2TR) output to be considered
- * non-dust and relayable by Bitcoin Core.
- */
-const P2TR_DUST_THRESHOLD = 330;
-
-export const createBackup = ({
+export const createInscriptionBackup = ({
   backupIndex,
   feeRate,
   masterNode,
@@ -338,12 +410,6 @@ export const createBackup = ({
   changeDescriptorWithIndex: { descriptor: string; index: number };
   tag?: string;
 }) => {
-  const fundingUtxo = utxosData[0];
-  if (!fundingUtxo) throw new Error('No UTXOs provided for backup funding');
-  const walletUTXO = fundingUtxo.output;
-  const fundingTxHex = fundingUtxo.txHex;
-  const fundingVout = fundingUtxo.vout;
-
   const vaultTxId = psbtVault.extractTransaction().getHash();
   const triggerTx = psbtTrigger.extractTransaction().toBuffer();
   const panicTx = psbtPanic.extractTransaction().toBuffer();
@@ -371,33 +437,66 @@ export const createBackup = ({
     network
   });
 
+  // Minimum value (in satoshis) for a Taproot (P2TR) output to be considered
+  // non-dust and relayable by Bitcoin Core. Assumes 3 sats/vByte
+  const P2TR_DUST_THRESHOLD = 330;
+  //We want to make sure the reveal output won't leave never-spendable utxos in
+  //the mempool
+  const REVEAL_OUTPUT_VALUE = Math.max(
+    P2TR_DUST_THRESHOLD,
+    (P2TR_DUST_THRESHOLD * feeRate) / 3
+  );
+
+  const revealVsize = getRevealVsize(backupInscription);
+  const revealFee = Math.ceil(revealVsize * feeRate);
+  const targetValue = REVEAL_OUTPUT_VALUE + revealFee;
+  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
+
+  const selected = coinselectUtxosData({
+    utxosData,
+    targetOutput: backupInscription as unknown as OutputInstance,
+    targetValue,
+    changeOutput,
+    feeRate
+  });
+  if (!selected) throw new Error('Insufficient funds for backup');
+
   const psbtCommit = new Psbt({ network });
-  psbtCommit.setVersion(3);
-  const commitInputFinalizer = walletUTXO.updatePsbtAsInput({
-    psbt: psbtCommit,
-    txHex: fundingTxHex,
-    vout: fundingVout
-  });
-  const inscriptionValue = 1000;
-  backupInscription.updatePsbtAsOutput({
-    psbt: psbtCommit,
-    value: inscriptionValue
-  });
+  const commitFinalizers = [];
+  for (const utxo of selected.utxosData) {
+    const finalizer = utxo.output.updatePsbtAsInput({
+      psbt: psbtCommit,
+      txHex: utxo.txHex,
+      vout: utxo.vout
+    });
+    commitFinalizers.push(finalizer);
+  }
+  for (const target of selected.targets) {
+    target.output.updatePsbtAsOutput({
+      psbt: psbtCommit,
+      value: target.value
+    });
+  }
   signers.signBIP32({ psbt: psbtCommit, masterNode });
-  commitInputFinalizer({ psbt: psbtCommit });
+  commitFinalizers.forEach(finalizer => finalizer({ psbt: psbtCommit }));
+
+  const inscriptionVout = selected.targets.findIndex(
+    t => t.output === (backupInscription as unknown as OutputInstance)
+  );
+  if (inscriptionVout === -1)
+    throw new Error('Inscription output not found in coin selection');
 
   const psbtReveal = new Psbt({ network });
-  psbtReveal.setVersion(3);
   const revealInputFinalizer = backupInscription.updatePsbtAsInput({
     psbt: psbtReveal,
     txHex: psbtCommit.extractTransaction().toHex(),
-    vout: 0
+    vout: inscriptionVout
   });
-  psbtReveal.addOutput({ script: P2A_SCRIPT, value: 0 });
-  walletUTXO.updatePsbtAsOutput({
-    psbt: psbtReveal,
-    value: inscriptionValue - FEE
+  psbtReveal.addOutput({
+    script: P2A_SCRIPT, //FIXME: here us a change address, right?
+    value: REVEAL_OUTPUT_VALUE
   });
+  //TODO: here this will create a new utxo. also we can remove the original utxos
   signers.signBIP32({ psbt: psbtReveal, masterNode });
   revealInputFinalizer({ psbt: psbtReveal });
 
