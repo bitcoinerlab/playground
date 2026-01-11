@@ -110,23 +110,35 @@ const getOutputsWithValue = (utxosData: UtxosData) =>
 const coinselectUtxosData = ({
   utxosData,
   targetOutput,
-  changeOutput,
   targetValue,
+  backupOutput,
+  backupValue,
+  changeOutput,
   feeRate
 }: {
   utxosData: UtxosData;
   targetOutput: OutputInstance;
-  serviceOutput?: OutputInstance;
-  changeOutput: OutputInstance;
   targetValue: number;
+  backupOutput?: OutputInstance;
+  backupValue?: number;
+  changeOutput: OutputInstance;
   feeRate: number;
 }) => {
   const utxos = getOutputsWithValue(utxosData);
   if (!utxos.length) return;
   if (targetValue <= dustThreshold(targetOutput)) return;
+  if (backupOutput && backupValue !== undefined) {
+    if (backupValue <= dustThreshold(backupOutput)) return;
+  } else if (backupOutput || backupValue !== undefined) {
+    throw new Error('backupOutput and backupValue must be provided together');
+  }
+  const targets = [{ output: targetOutput, value: targetValue }];
+  if (backupOutput && backupValue !== undefined)
+    targets.push({ output: backupOutput, value: backupValue });
+
   const coinselected = coinselect({
     utxos,
-    targets: [{ output: targetOutput, value: targetValue }],
+    targets,
     remainder: changeOutput,
     feeRate
   });
@@ -184,10 +196,7 @@ export const createVault = ({
   const randomPubKey = randomMasterNode.derivePath(
     `m${randomOriginPath}${randomKeyPath}`
   ).publicKey;
-  const vaultOutput = new Output({
-    descriptor: `wpkh(${randomKey})`,
-    network
-  });
+  const vaultOutput = new Output({ descriptor: `wpkh(${randomKey})`, network });
   const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
   // Run the coinselector
   const selected = coinselectUtxosData({
