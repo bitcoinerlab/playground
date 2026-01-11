@@ -89,3 +89,22 @@ flowchart LR
     P --> A_P[P2A]
     style A_P fill:transparent,stroke:transparent
 ```
+
+## Vault Output Ordering
+
+The **Vault Transaction** uses a deterministic output ordering so the wallet can
+always identify vaults and enumerate how many exist.
+
+- **Output 0**: The output that feeds the **Trigger Transaction**.
+- **Output 1**: A deterministic "vault marker" output used to fund the
+  **Backup Transaction**.
+
+Each vault uses a unique index derived from the wallet seed. The marker output
+is sent to a pubkey derived from the path `m/1073'/<network>'/0'/<index>`, where
+`<network>` is `0` for mainnet and `1` for test networks, and `<index>` starts at
+0 and increments for each new vault.
+
+To create a new vault, the wallet scans these indices, detects which ones are
+already used, and selects the next unused index. This lets the wallet discover
+and count all vaults just by checking which deterministic vault paths have been
+used, without any extra metadata.
