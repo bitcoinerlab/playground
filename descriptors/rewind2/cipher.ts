@@ -1,4 +1,12 @@
 const CIPHER_ADDITIONAL_DATA = 'Rewind Bitcoin';
+const SIGNING_MESSAGE = 'Satoshi Nakamoto'; //Can be any, but don't change it
+
+import type { BIP32Interface } from 'bip32';
+import { sha256 } from '@noble/hashes/sha2';
+import { MessageFactory } from 'bitcoinjs-message';
+import * as secp256k1 from '@bitcoinerlab/secp256k1';
+const MessageAPI = MessageFactory(secp256k1);
+
 export const getManagedChacha = async (key: Uint8Array) => {
   //defer the load since this can really slow down initial loads in slow old
   //android devices.
@@ -63,4 +71,33 @@ export const getManagedChacha = async (key: Uint8Array) => {
       return decryptedMessage;
     }
   };
+};
+
+/*
+ *  const PURPOSE = 1073;
+ *  const VAULT_PATH = `m/${PURPOSE}'/<network>'/0'/<index>`;
+ *  const vaultPath = VAULT_PATH.replace(
+ *      '<network>',
+ *      network === networks.bitcoin ? '0' : '1'
+ *    ).replace('<index>', index.toString());
+ */
+
+export const getSeedDerivedCipherKey = async ({
+  vaultPath,
+  masterNode
+}: {
+  vaultPath: string;
+  masterNode: BIP32Interface;
+}) => {
+  const childNode = masterNode.derivePath(vaultPath);
+  if (!childNode.privateKey) throw new Error('Could not generate a privateKey');
+
+  const signature = MessageAPI.sign(
+    SIGNING_MESSAGE,
+    childNode.privateKey,
+    true // assumes compressed
+  );
+  const cipherKey = sha256(signature);
+
+  return cipherKey;
 };
