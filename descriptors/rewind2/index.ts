@@ -133,11 +133,15 @@ Every reload reuses the same mnemonic for convenience.`);
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/1/*' })
   ];
   if (!descriptors[0]) throw new Error();
+  const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   await discovery.fetch({ descriptors });
+  const initialHistoryLength = discovery.getHistory({
+    descriptors,
+    txStatus: TxStatus.ALL
+  }).length;
 
   // Check if the wallet already has confirmed funds
-  const utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
-  const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);
+  let utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
   //const walletAddressInfo = await explorer.fetchAddress(walletAddress);
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   //let walletPrevTxId;
@@ -169,10 +173,32 @@ Every reload reuses the same mnemonic for convenience.`);
         `Faucet rate-limit: this address has already received sats recently.
 Please retry (max 2 faucet requests per IP/address per minute).`
       );
-    await discovery.fetch({ descriptors });
+    for (let attempt = 1; attempt <= FAUCET_FETCH_RETRIES; attempt += 1) {
+      await discovery.fetch({ descriptors });
+      const history = discovery.getHistory({
+        descriptors,
+        txStatus: TxStatus.ALL
+      });
+      if (history.length > initialHistoryLength) {
+        Log('✅ Faucet transaction detected.');
+        break;
+      }
+      if (attempt < FAUCET_FETCH_RETRIES) {
+        Log(
+          `⏳ Waiting for faucet transaction... (${attempt}/${FAUCET_FETCH_RETRIES})`
+        );
+        await wait(FAUCET_FETCH_DELAY_MS);
+      } else {
+        Log('⚠️ Faucet transaction not detected yet. Continuing.');
+      }
+    }
   } else {
     Log(`💰 Existing balance detected. Skipping faucet.`);
   }
+
+  utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
+  const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);
+  Log(`🔍 Updated wallet balance: ${utxosAndBalance.balance}`);
 
   const coldAddress = new Output({
     descriptor: wpkhBIP32({
