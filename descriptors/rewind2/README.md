@@ -37,14 +37,14 @@ Using Inscriptions for backups requires two transactions:
 2.  **Reveal Transaction**
 
 If the Vault pays for the Backup (to ensure linkage/atomicity), the dependency chain becomes:
-`Vault Tx` $\rightarrow$ `Commit Tx` $\rightarrow$ `Reveal Tx`
+`Vault Tx` → `Commit Tx` → `Reveal Tx`
 
 This results in a chain of **3 transactions**. This exceeds standard package relay limits for unconfirmed transaction chains (often limited to 2 for TRUC/V3 or specific package submission rules).
 
 #### The OP_RETURN Approach (Selected)
 
 Using `OP_RETURN` allows the backup to be contained within a single transaction (or potentially the Vault transaction itself). If implemented as a separate child transaction paid for by the Vault:
-`Vault Tx` $\rightarrow$ `Backup Tx (OP_RETURN)`
+`Vault Tx` → `Backup Tx (OP_RETURN)`
 
 This results in a chain of **2 transactions**. This fits comfortably within package relay limits, allowing the Vault and Backup to be propagated and mined together reliably.
 
