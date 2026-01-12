@@ -4,6 +4,8 @@ const LOCK_BLOCKS = 2;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 const VAULT_PURPOSE = 1073;
 
+const BACKOUT_OUTPUT_INDEX = 1;
+
 export type UtxosData = Array<{
   tx: Transaction;
   txHex: string;
@@ -239,20 +241,20 @@ export const createVault = ({
     `m${randomOriginPath}${randomKeyPath}`
   ).publicKey;
   const vaultOutput = new Output({ descriptor: `wpkh(${randomKey})`, network });
-  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
   const backupOutput = new Output({
     descriptor: getBackupDescriptor({ masterNode, network, index: vaultIndex }),
     network
   });
+  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
   const backupValue = Math.ceil(Math.max(...BACKUP_TX_VBYTES) * feeRate);
   // Run the coinselector
   const selected = coinselectUtxosData({
     utxosData,
     targetOutput: vaultOutput,
     targetValue: vaultedAmount,
-    changeOutput,
     backupOutput,
     backupValue,
+    changeOutput,
     feeRate
   });
   if (!selected) return 'COINSELECT_ERROR';
@@ -291,8 +293,9 @@ export const createVault = ({
   const backupOutputIndex = vaultTargets.findIndex(
     target => target.output === backupOutput
   );
-  const backupFee = vaultTargets[backupOutputIndex]?.value;
-  if (backupOutputIndex < 0 || backupFee === undefined) return 'UNKNOWN_ERROR';
+  if (backupOutputIndex !== BACKOUT_OUTPUT_INDEX) return 'UNKNOWN_ERROR';
+  const backupCost = vaultTargets[backupOutputIndex]?.value;
+  if (backupCost === undefined) return 'UNKNOWN_ERROR';
   //Sign
   signers.signBIP32({ psbt: psbtVault, masterNode });
   //Finalize
@@ -399,8 +402,7 @@ export const createVault = ({
     psbtVault,
     psbtTrigger,
     psbtPanic,
-    backupOutputIndex,
-    backupFee,
+    backupCost,
     randomMasterNode
   };
 };
@@ -409,23 +411,24 @@ export const createOpReturnBackup = ({
   psbtTrigger,
   psbtPanic,
   psbtVault,
-  backupOutputIndex,
-  backupFee,
-  randomMasterNode,
+  vaultIndex,
+  masterNode,
   network
 }: {
   psbtTrigger: Psbt;
   psbtPanic: Psbt;
   psbtVault: Psbt;
-  backupOutputIndex: number;
-  backupFee: number;
-  randomMasterNode: BIP32Interface;
+  vaultIndex: number;
+  masterNode: BIP32Interface;
   network: Network;
 }) => {
   const vaultTx = psbtVault.extractTransaction();
-  const vaultTxId = vaultTx.getHash();
   const triggerTx = psbtTrigger.extractTransaction().toBuffer();
   const panicTx = psbtPanic.extractTransaction().toBuffer();
+  const backupOutput = new Output({
+    descriptor: getBackupDescriptor({ masterNode, network, index: vaultIndex }),
+    network
+  });
 
   const entry = serializeVaultEntry({
     triggerTx,
@@ -438,13 +441,10 @@ export const createOpReturnBackup = ({
   psbtBackup.setVersion(3);
 
   // Input: The output from the vault
-  psbtBackup.addInput({
-    hash: vaultTxId,
-    index: backupOutputIndex,
-    witnessUtxo: {
-      script: vaultTx.outs[backupOutputIndex]?.script!,
-      value: backupFee
-    }
+  const backupInputFinalizer = backupOutput.updatePsbtAsInput({
+    psbt: psbtBackup,
+    txHex: vaultTx.toHex(),
+    vout: BACKOUT_OUTPUT_INDEX
   });
 
   // Output: OP_RETURN
@@ -455,8 +455,8 @@ export const createOpReturnBackup = ({
     value: 0
   });
 
-  signers.signBIP32({ psbt: psbtBackup, masterNode: randomMasterNode });
-  psbtBackup.finalizeAllInputs();
+  signers.signBIP32({ psbt: psbtBackup, masterNode });
+  backupInputFinalizer({ psbt: psbtBackup });
   const backupVsize = psbtBackup.extractTransaction(true).virtualSize();
   if (!BACKUP_TX_VBYTES.includes(backupVsize))
     throw new Error(`Unexpected backup vsize: ${backupVsize}`);

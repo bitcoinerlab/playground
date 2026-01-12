@@ -285,29 +285,21 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   });
   if (typeof vault === 'string') throw new Error(vault);
 
-  const {
-    psbtVault,
-    psbtTrigger,
-    psbtPanic,
-    backupOutputIndex,
-    backupFee,
-    randomMasterNode
-  } = vault;
+  const { psbtVault, psbtTrigger, psbtPanic } = vault;
 
   const psbtBackup = createOpReturnBackup({
     psbtTrigger,
     psbtPanic,
     psbtVault,
-    backupOutputIndex,
-    backupFee,
-    randomMasterNode,
+    vaultIndex,
+    masterNode,
     network
   });
 
   console.log(`
-vault id: ${psbtVault.extractTransaction().getId()}
-trigger id: ${psbtTrigger.extractTransaction().getId()}
-backup id: ${psbtBackup.extractTransaction().getId()}
+vault tx id: ${psbtVault.extractTransaction().getId()}
+trigger tx id: ${psbtTrigger.extractTransaction().getId()}
+backup tx id: ${psbtBackup.extractTransaction().getId()}
 `);
   explorer.close();
 };
