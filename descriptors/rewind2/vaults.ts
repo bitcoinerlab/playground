@@ -1,4 +1,3 @@
-//const FEE = 500; //FIXME: dynamic - also duplicated on index.ts and vaults.ts - better use FEE_RATE
 const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
 const LOCK_BLOCKS = 2;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
@@ -154,7 +153,7 @@ const coinselectUtxosData = ({
   targetOutput,
   targetValue,
   backupOutput,
-  backupValue,
+  backupCost,
   changeOutput,
   feeRate
 }: {
@@ -162,21 +161,21 @@ const coinselectUtxosData = ({
   targetOutput: OutputInstance;
   targetValue: number;
   backupOutput?: OutputInstance;
-  backupValue?: number;
+  backupCost?: number;
   changeOutput: OutputInstance;
   feeRate: number;
 }) => {
   const utxos = getOutputsWithValue(utxosData);
   if (!utxos.length) return;
   if (targetValue <= dustThreshold(targetOutput)) return;
-  if (backupOutput && backupValue !== undefined) {
-    if (backupValue <= dustThreshold(backupOutput)) return;
-  } else if (backupOutput || backupValue !== undefined) {
-    throw new Error('backupOutput and backupValue must be provided together');
+  if (backupOutput && backupCost !== undefined) {
+    if (backupCost <= dustThreshold(backupOutput)) return;
+  } else if (backupOutput || backupCost !== undefined) {
+    throw new Error('backupOutput and backupCost must be provided together');
   }
   const targets = [{ output: targetOutput, value: targetValue }];
-  if (backupOutput && backupValue !== undefined)
-    targets.push({ output: backupOutput, value: backupValue });
+  if (backupOutput && backupCost !== undefined)
+    targets.push({ output: backupOutput, value: backupCost });
 
   const coinselected = coinselect({
     utxos,
@@ -246,14 +245,14 @@ export const createVault = ({
     network
   });
   const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
-  const backupValue = Math.ceil(Math.max(...BACKUP_TX_VBYTES) * feeRate);
+  const backupCost = Math.ceil(Math.max(...BACKUP_TX_VBYTES) * feeRate);
   // Run the coinselector
   const selected = coinselectUtxosData({
     utxosData,
     targetOutput: vaultOutput,
     targetValue: vaultedAmount,
     backupOutput,
-    backupValue,
+    backupCost,
     changeOutput,
     feeRate
   });
@@ -294,8 +293,8 @@ export const createVault = ({
     target => target.output === backupOutput
   );
   if (backupOutputIndex !== BACKOUT_OUTPUT_INDEX) return 'UNKNOWN_ERROR';
-  const backupCost = vaultTargets[backupOutputIndex]?.value;
-  if (backupCost === undefined) return 'UNKNOWN_ERROR';
+  if (backupCost !== vaultTargets[backupOutputIndex]?.value)
+    return 'UNKNOWN_ERROR';
   //Sign
   signers.signBIP32({ psbt: psbtVault, masterNode });
   //Finalize
@@ -578,7 +577,7 @@ export const createInscriptionBackup = ({
     vout: inscriptionVout
   });
   psbtReveal.addOutput({
-    script: P2A_SCRIPT, //FIXME: here us a change address, right?
+    script: P2A_SCRIPT,
     value: REVEAL_OUTPUT_VALUE
   });
   //TODO: here this will create a new utxo. also we can remove the original utxos
