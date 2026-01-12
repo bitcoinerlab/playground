@@ -40,7 +40,6 @@ import {
 
 //FIXME: this still needs a mechanism to keep some margin for not to spend from the wallet: the max expected fee in future for (trigger+panic) x nActiveVaults
 const FEE_RATE = 2.0;
-const MIN_VAULT_RATIO = 2 / 3; // This is a hard limit we impose. Don't let people vault funds if the unvaulted amount (after backup and fees) will be below 2/3 of the vaulted amount.
 const WPKH_DUST_THRESHOLD = 294;
 const vaultFee = Math.ceil(Math.max(...VAULT_TX_VBYTES.withChange) * FEE_RATE);
 const backupValue = Math.ceil(Math.max(...BACKUP_TX_VBYTES) * FEE_RATE);
@@ -175,12 +174,9 @@ Every reload reuses the same mnemonic for convenience.`);
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   //let walletPrevTxId;
 
-  let minVaultableAmount = Math.max(
-    WPKH_DUST_THRESHOLD,
-    Math.ceil(utxosAndBalance.balance * MIN_VAULT_RATIO)
-  );
+  let minVaultableAmount = WPKH_DUST_THRESHOLD;
   let maxVaultableAmount = utxosAndBalance.balance - vaultFee - backupValue;
-
+  // Trigger tx pays zero fees, so unvaulted amount equals vaulted amount.
   if (maxVaultableAmount < minVaultableAmount) {
     Log(
       `💰 The wallet does not have enough funds. Let's request some funds...`
@@ -226,15 +222,12 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   } else Log(`💰 Existing balance detected. Skipping faucet.`);
 
   utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
-  minVaultableAmount = Math.max(
-    WPKH_DUST_THRESHOLD,
-    Math.ceil(utxosAndBalance.balance * MIN_VAULT_RATIO)
-  );
+  minVaultableAmount = WPKH_DUST_THRESHOLD;
   maxVaultableAmount = utxosAndBalance.balance - vaultFee - backupValue;
 
   if (maxVaultableAmount < minVaultableAmount)
     throw new Error(
-      `Balance too low: vaultable amount ${maxVaultableAmount} < ratio target ${minVaultableAmount} or below dust threshold ${WPKH_DUST_THRESHOLD}.`
+      `Balance too low: vaultable amount ${maxVaultableAmount} below dust threshold ${WPKH_DUST_THRESHOLD}.`
     );
 
   const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);
