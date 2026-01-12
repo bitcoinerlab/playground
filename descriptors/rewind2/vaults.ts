@@ -12,7 +12,6 @@ export type UtxosData = Array<{
   output: OutputInstance;
 }>;
 
-import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
 import {
   networks,
   Psbt,
@@ -28,7 +27,7 @@ import {
   DescriptorsFactory,
   keyExpressionBIP32
 } from '@bitcoinerlab/descriptors';
-const { Output, BIP32, parseKeyExpression } = DescriptorsFactory(secp256k1);
+const { Output, parseKeyExpression } = DescriptorsFactory(secp256k1);
 import type { BIP32Interface } from 'bip32';
 import { encode as encodeVarInt, encodingLength } from 'varuint-bitcoin';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
@@ -200,13 +199,13 @@ const coinselectUtxosData = ({
   };
 };
 
-//FIXME: pass here the randomMasterNode
 export const createVault = ({
   vaultedAmount,
   unvaultKey,
   feeRate,
   utxosData,
   masterNode,
+  randomMasterNode,
   coldAddress,
   changeDescriptorWithIndex,
   network,
@@ -218,17 +217,12 @@ export const createVault = ({
   feeRate: number;
   utxosData: UtxosData;
   masterNode: BIP32Interface;
+  randomMasterNode: BIP32Interface;
   coldAddress: string;
   changeDescriptorWithIndex: { descriptor: string; index: number };
   network: Network;
   vaultIndex: number;
 }) => {
-  const randomMnemonic = generateMnemonic();
-
-  const randomMasterNode = BIP32.fromSeed(
-    mnemonicToSeedSync(randomMnemonic),
-    network
-  );
   const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`;
   const randomKeyPath = `/0/0`;
   const randomKey = keyExpressionBIP32({

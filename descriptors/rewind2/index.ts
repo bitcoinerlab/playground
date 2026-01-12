@@ -255,12 +255,18 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     keyPath: '/0'
   });
 
+  const randomMnemonic = generateMnemonic();
+  const randomMasterNode = BIP32.fromSeed(
+    mnemonicToSeedSync(randomMnemonic),
+    network
+  );
   const vault = createVault({
     vaultedAmount: maxVaultableAmount, //Let's vault the max possible
     unvaultKey,
     feeRate: FEE_RATE,
     utxosData,
     masterNode,
+    randomMasterNode,
     coldAddress,
     changeDescriptorWithIndex,
     network,
