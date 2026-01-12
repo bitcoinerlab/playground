@@ -4,23 +4,6 @@
 //core 30 submit package limitations: https://bitcoincore.org/en/doc/30.0.0/rpc/rawtransactions/submitpackage/
 //use op_return instrad of inscriptions? This way we can make sure the backup
 //is processed (as a package) together with the vault: https://bitcoin.stackexchange.com/questions/126208/why-would-anyone-use-op-return-over-inscriptions-aside-from-fees
-//
-//TODO: use OP_RETURN:
-/*import * as bitcoin from 'bitcoinjs-lib';
-
-const network = bitcoin.networks.bitcoin; // or testnet
-
-const psbt = new bitcoin.Psbt({ network });
-
-const data = Buffer.from('hello world', 'utf8');
-
-const embed = bitcoin.payments.embed({ data: [data] });
-
-psbt.addOutput({
-  script: embed.output,
-  value: 0
-});
-*/
 import './codesandboxFixes';
 import { readFileSync, writeFileSync } from 'fs';
 import {
@@ -38,7 +21,7 @@ import {
   type DiscoveryInstance
 } from '@bitcoinerlab/discovery';
 
-//FIXME: this still needs a mechanism to keep some margin for not to spend from the wallet: the max expected fee in future for (trigger+panic) x nActiveVaults
+//FIXME: this still needs a mechanism to keep some margin for paying anchors
 const FEE_RATE = 2.0;
 const WPKH_DUST_THRESHOLD = 294;
 const vaultFee = Math.ceil(Math.max(...VAULT_TX_VBYTES.withChange) * FEE_RATE);
