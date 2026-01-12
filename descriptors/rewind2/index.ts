@@ -1,5 +1,17 @@
 // Copyright (c) 2025 Jose-Luis Landabaso - https://bitcoinerlab.com
 // Distributed under the MIT software license
+//
+// Package policy details important to our case:
+// - Package RBF replacement is limited to 1‑parent‑1‑child (parent must spent
+//   confirmed outputs).
+// - Each tx is validated individually first (v2 vs v3 rules differ; see below)
+// - Not all‑or‑nothing: partial acceptance is possible; mining isn’t atomic.
+//
+// What’s different (TRUC vs non‑TRUC)
+// - v3 (TRUC): can be 0‑fee, and has extra relay rules (only v3 can spend
+//      unconfirmed v3, size limits, sibling eviction, etc.).
+// - v2 (non‑TRUC): must meet standard static minrelay fee. A 0‑fee v2 parent
+//      is rejected even in a package.
 
 //core 30 submit package limitations: https://bitcoincore.org/en/doc/30.0.0/rpc/rawtransactions/submitpackage/
 //use op_return instrad of inscriptions? This way we can make sure the backup
@@ -307,8 +319,8 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   console.log(`
  vault tx id: ${vaultTx.getId()}
- trigger tx id: ${psbtTrigger.extractTransaction().getId()}
  backup tx id: ${backupTx.getId()}
+ trigger tx id: ${psbtTrigger.extractTransaction().getId()}
  `);
   explorer.close();
 };
