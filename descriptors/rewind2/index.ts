@@ -285,11 +285,31 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     network
   });
 
+  const vaultTx = psbtVault.extractTransaction();
+  const backupTx = psbtBackup.extractTransaction();
+  Log(`📦 Submitting vault + backup as a package...`);
+  const pkgUrl = `${ESPLORA_API}/txs/package`;
+  const pkgRes = await fetch(pkgUrl, {
+    method: 'POST',
+    body: JSON.stringify([vaultTx.toHex(), backupTx.toHex()])
+  });
+  if (pkgRes.status === 404) {
+    throw new Error(
+      `Package endpoint not available at ${pkgUrl}. Your Esplora instance likely doesn't support /txs/package`
+    );
+  }
+  if (!pkgRes.ok) {
+    const errText = await pkgRes.text();
+    throw new Error(`Package submit failed (${pkgRes.status}): ${errText}`);
+  }
+  const pkgRespJson = await pkgRes.json();
+  Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
+
   console.log(`
-vault tx id: ${psbtVault.extractTransaction().getId()}
-trigger tx id: ${psbtTrigger.extractTransaction().getId()}
-backup tx id: ${psbtBackup.extractTransaction().getId()}
-`);
+ vault tx id: ${vaultTx.getId()}
+ trigger tx id: ${psbtTrigger.extractTransaction().getId()}
+ backup tx id: ${backupTx.getId()}
+ `);
   explorer.close();
 };
 if (isWeb) (window as unknown as { start: typeof start }).start = start;
