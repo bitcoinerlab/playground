@@ -46,6 +46,11 @@ This results in a chain of **3 transactions**. This exceeds standard package rel
 Using `OP_RETURN` allows the backup to be contained within a single transaction (or potentially the Vault transaction itself). If implemented as a separate child transaction paid for by the Vault:
 `Vault Tx` → `Backup Tx (OP_RETURN)`
 
+Why the backup must be a descendant of the vault:
+
+- The backup payload includes the trigger + panic transactions, which can only be constructed after the vault exists.
+- In the minimal-funds case (e.g., only one UTXO), the vault must fund the backup output because there may be no other inputs available.
+
 This results in a chain of **2 transactions**. This fits comfortably within package relay limits, allowing the Vault and Backup to be propagated and mined together reliably.
 
 ### Transaction Flow Diagram
