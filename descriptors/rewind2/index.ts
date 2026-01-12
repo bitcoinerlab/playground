@@ -40,6 +40,8 @@ import {
 
 //FIXME: this still needs a mechanism to keep some margin for not to spend from the wallet: the max expected fee in future for (trigger+panic) x nActiveVaults
 const FEE_RATE = 2.0;
+const MIN_VAULT_RATIO = 2 / 3; // This is a hard limit we impose. Don't let people vault funds if the unvaulted amount (after backup and fees) will be below 2/3 of the vaulted amount.
+const WPKH_DUST_THRESHOLD = 294;
 const vaultFee = Math.ceil(Math.max(...VAULT_TX_VBYTES.withChange) * FEE_RATE);
 const backupValue = Math.ceil(Math.max(...BACKUP_TX_VBYTES) * FEE_RATE);
 const VAULT_GAP_LIMIT = 20;
@@ -173,9 +175,16 @@ Every reload reuses the same mnemonic for convenience.`);
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   //let walletPrevTxId;
 
-  const WPKH_DUST_THRESHOLD = 294;
-  if (utxosAndBalance.balance < backupValue + vaultFee + WPKH_DUST_THRESHOLD) {
-    Log(`💰 The wallet is empty. Let's request some funds...`);
+  let minVaultableAmount = Math.max(
+    WPKH_DUST_THRESHOLD,
+    Math.ceil(utxosAndBalance.balance * MIN_VAULT_RATIO)
+  );
+  let maxVaultableAmount = utxosAndBalance.balance - vaultFee - backupValue;
+
+  if (maxVaultableAmount < minVaultableAmount) {
+    Log(
+      `💰 The wallet does not have enough funds. Let's request some funds...`
+    );
     //New or empty wallet. Let's prepare the faucet request:
     const formData = new URLSearchParams();
     const newWalletOutput = new Output({
@@ -217,6 +226,17 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   } else Log(`💰 Existing balance detected. Skipping faucet.`);
 
   utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
+  minVaultableAmount = Math.max(
+    WPKH_DUST_THRESHOLD,
+    Math.ceil(utxosAndBalance.balance * MIN_VAULT_RATIO)
+  );
+  maxVaultableAmount = utxosAndBalance.balance - vaultFee - backupValue;
+
+  if (maxVaultableAmount < minVaultableAmount)
+    throw new Error(
+      `Balance too low: vaultable amount ${maxVaultableAmount} < ratio target ${minVaultableAmount} or below dust threshold ${WPKH_DUST_THRESHOLD}.`
+    );
+
   const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);
   Log(`🔍 Updated wallet balance: ${utxosAndBalance.balance}`);
 
@@ -260,7 +280,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   });
 
   const vault = createVault({
-    vaultedAmount: utxosAndBalance.balance - vaultFee - backupValue,
+    vaultedAmount: maxVaultableAmount, //Let's vault the max possible
     unvaultKey,
     feeRate: FEE_RATE,
     utxosData,
