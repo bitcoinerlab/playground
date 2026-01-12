@@ -14,7 +14,18 @@ To achieve this, the Vault and Backup transactions should ideally be submitted a
 
 To support package relay and potentially utilize TRUC (Topologically Restricted Until Confirmation) v3 transactions, we must adhere to Bitcoin Core's package limits.
 
-Current/upcoming Bitcoin Core versions (e.g., v30.2 logic) typically restrict packages to a specific topology, often allowing **one child with its parents**, but prohibiting long chains of unconfirmed dependencies within a single package submission if they exceed specific depth/size limits.
+#### Package Relay + TRUC Summary
+
+Package policy details important to our case:
+
+- Package RBF replacement is limited to 1-parent-1-child; parent must spend confirmed outputs.
+- Each tx is validated individually first (v2 vs v3 rules differ; see below).
+- Not all-or-nothing: partial acceptance is possible; mining isn't atomic.
+
+What's different (TRUC vs non-TRUC):
+
+- v3 (TRUC): parent can be 0-fee and has extra relay rules (only v3 can spend unconfirmed v3.
+- v2 (non-TRUC): must meet standard static minrelay fee. A 0-fee v2 parent is rejected even in a package.
 
 ### Analysis
 
