@@ -101,7 +101,7 @@ const serializeVaultEntry = ({
  * - Witness size: 109–111 bytes (segwit marker/flag + count + sig(71–73) + pubkey).
  * - vbytes = ceil((stripped*4 + witness) / 4) = 586–590 vB.
  */
-export const BACKUP_TX_VBYTES = [586, 587, 588, 589, 590];
+export const OP_RETURN_BACKUP_TX_VBYTES = [586, 587, 588, 589, 590];
 
 /**
  * Estimated vbytes for the vault tx (1 P2WPKH input, 2–3 P2WPKH outputs).
@@ -187,10 +187,10 @@ const coinselectUtxosData = ({
     coinselected.utxos.length === utxosData.length
       ? utxosData
       : coinselected.utxos.map(utxo => {
-          const utxoData = utxosData[utxos.indexOf(utxo)];
-          if (!utxoData) throw new Error('Invalid utxoData');
-          return utxoData;
-        });
+        const utxoData = utxosData[utxos.indexOf(utxo)];
+        if (!utxoData) throw new Error('Invalid utxoData');
+        return utxoData;
+      });
   return {
     vsize: coinselected.vsize,
     fee: coinselected.fee,
@@ -208,8 +208,9 @@ export const createVault = ({
   randomMasterNode,
   coldAddress,
   changeDescriptorWithIndex,
-  network,
-  vaultIndex
+  vaultIndex,
+  backupType,
+  network
 }: {
   vaultedAmount: number;
   /** The unvault key expression that must be used to create triggerDescriptor */
@@ -220,8 +221,9 @@ export const createVault = ({
   randomMasterNode: BIP32Interface;
   coldAddress: string;
   changeDescriptorWithIndex: { descriptor: string; index: number };
-  network: Network;
   vaultIndex: number;
+  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
+  network: Network;
 }) => {
   const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`;
   const randomKeyPath = `/0/0`;
@@ -239,7 +241,9 @@ export const createVault = ({
     network
   });
   const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
-  const backupCost = Math.ceil(Math.max(...BACKUP_TX_VBYTES) * feeRate);
+  const backupCost = Math.ceil(
+    Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate
+  );
   // Run the coinselector
   const selected = coinselectUtxosData({
     utxosData,
@@ -263,7 +267,8 @@ export const createVault = ({
       'coinselect outputs should be vault, backup, and change at most'
     );
   const psbtVault = new Psbt({ network });
-  psbtVault.setVersion(3);
+
+  psbtVault.setVersion(backupType === 'OP_RETURN_TRUC' ? 3 : 2);
 
   //Add the inputs to psbtVault:
   const vaultFinalizers = [];
@@ -406,6 +411,7 @@ export const createOpReturnBackup = ({
   psbtVault,
   vaultIndex,
   masterNode,
+  backupType,
   network
 }: {
   psbtTrigger: Psbt;
@@ -413,8 +419,11 @@ export const createOpReturnBackup = ({
   psbtVault: Psbt;
   vaultIndex: number;
   masterNode: BIP32Interface;
+  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
   network: Network;
 }) => {
+  if (backupType !== 'OP_RETURN_TRUC' && backupType !== 'OP_RETURN_V2')
+    throw new Error(`Invalid backupType $backupType}`);
   const vaultTx = psbtVault.extractTransaction();
   const triggerTx = psbtTrigger.extractTransaction().toBuffer();
   const panicTx = psbtPanic.extractTransaction().toBuffer();
@@ -431,7 +440,7 @@ export const createOpReturnBackup = ({
   const content = Buffer.concat([header, entry]);
 
   const psbtBackup = new Psbt({ network }); // Use same network
-  psbtBackup.setVersion(3);
+  psbtVault.setVersion(backupType === 'OP_RETURN_TRUC' ? 3 : 2);
 
   // Input: The output from the vault
   const backupInputFinalizer = backupOutput.updatePsbtAsInput({
@@ -451,7 +460,7 @@ export const createOpReturnBackup = ({
   signers.signBIP32({ psbt: psbtBackup, masterNode });
   backupInputFinalizer({ psbt: psbtBackup });
   const backupVsize = psbtBackup.extractTransaction(true).virtualSize();
-  if (!BACKUP_TX_VBYTES.includes(backupVsize))
+  if (!OP_RETURN_BACKUP_TX_VBYTES.includes(backupVsize))
     throw new Error(`Unexpected backup vsize: ${backupVsize}`);
 
   return psbtBackup;

@@ -13,6 +13,10 @@
 // - v2 (non‑TRUC): must meet standard static minrelay fee. A 0‑fee v2 parent
 //      is rejected even in a package.
 
+//Package explained: https://github.com/bitcoin/bitcoin/blob/master/doc/policy/packages.md
+//TRUC explained: https://bips.dev/431/
+//guildeline for wallet devs from Sanders: https://bitcoinops.org/en/bitcoin-core-28-wallet-integration-guide/
+
 //core 30 submit package limitations: https://bitcoincore.org/en/doc/30.0.0/rpc/rawtransactions/submitpackage/
 //use op_return instrad of inscriptions? This way we can make sure the backup
 //is processed (as a package) together with the vault: https://bitcoin.stackexchange.com/questions/126208/why-would-anyone-use-op-return-over-inscriptions-aside-from-fees
@@ -37,7 +41,9 @@ import {
 const FEE_RATE = 2.0;
 const WPKH_DUST_THRESHOLD = 294;
 const vaultFee = Math.ceil(Math.max(...VAULT_TX_VBYTES.withChange) * FEE_RATE);
-const backupValue = Math.ceil(Math.max(...BACKUP_TX_VBYTES) * FEE_RATE);
+const backupValue = Math.ceil(
+  Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * FEE_RATE
+);
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
 const FAUCET_FETCH_DELAY_MS = 1500;
@@ -103,7 +109,7 @@ const { Output, BIP32 } = DescriptorsFactory(secp256k1);
 import type { Output } from 'bitcoinjs-lib/src/transaction';
 import { isWeb, JSONf, Log } from './utils';
 import {
-  BACKUP_TX_VBYTES,
+  OP_RETURN_BACKUP_TX_VBYTES,
   VAULT_TX_VBYTES,
   //createInscriptionBackup,
   createOpReturnBackup,
@@ -272,6 +278,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     mnemonicToSeedSync(randomMnemonic),
     network
   );
+  const backupType = 'OP_RETURN_TRUC';
   const vault = createVault({
     vaultedAmount: maxVaultableAmount, //Let's vault the max possible
     unvaultKey,
@@ -281,8 +288,9 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     randomMasterNode,
     coldAddress,
     changeDescriptorWithIndex,
-    network,
-    vaultIndex
+    vaultIndex,
+    backupType,
+    network
   });
   if (typeof vault === 'string') throw new Error(vault);
 
@@ -294,6 +302,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     psbtVault,
     vaultIndex,
     masterNode,
+    backupType,
     network
   });
 
