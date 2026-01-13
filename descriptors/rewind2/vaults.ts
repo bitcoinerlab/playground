@@ -308,7 +308,7 @@ export const createVault = ({
   signers.signBIP32({ psbt: psbtVault, masterNode });
   //Finalize
   vaultFinalizers.forEach(finalizer => finalizer({ psbt: psbtVault }));
-  const txVault = psbtVault.extractTransaction(true);
+  const txVault = psbtVault.extractTransaction();
   const vaultVsize = txVault.virtualSize();
   if (vaultVsize > selected.vsize)
     throw new Error('vsize larger than coinselected estimated one');
@@ -368,7 +368,7 @@ export const createVault = ({
     masterNode: randomMasterNode
   });
   triggerInputFinalizer({ psbt: psbtTrigger });
-  const triggerVsize = psbtTrigger.extractTransaction(true).virtualSize();
+  const triggerVsize = psbtTrigger.extractTransaction().virtualSize();
   if (triggerVsize !== 135)
     throw new Error(`Unexpected trigger vsize: ${triggerVsize}`);
 
@@ -402,7 +402,7 @@ export const createVault = ({
     masterNode: randomMasterNode
   });
   panicInputFinalizer({ psbt: psbtPanic });
-  const panicVsize = psbtPanic.extractTransaction(true).virtualSize();
+  const panicVsize = psbtPanic.extractTransaction().virtualSize();
   if (panicVsize < 139 || panicVsize > 140)
     throw new Error(`Unexpected panic vsize: ${panicVsize}`);
 
@@ -469,23 +469,26 @@ export const createOpReturnBackup = ({
 
   signers.signBIP32({ psbt: psbtBackup, masterNode });
   backupInputFinalizer({ psbt: psbtBackup });
-  const backupVsize = psbtBackup.extractTransaction(true).virtualSize();
+  const backupVsize = psbtBackup.extractTransaction().virtualSize();
   if (!OP_RETURN_BACKUP_TX_VBYTES.includes(backupVsize))
     throw new Error(`Unexpected backup vsize: ${backupVsize}`);
 
   return psbtBackup;
 };
 
-// Reveal tx vsize is stable because inscription content size is fixed.
-// Trigger raw size: 217–219 bytes; panic raw size: 269–271 bytes.
-// Entry = 1 (ver) + 1 (len) + trigger + 1 (len) + panic = 489–493 bytes.
-// Content = "REW" (3) + entry = 492–496 bytes.
-// Inscription witness stack = sig(64) + tapscript + controlblock(33)
-// → witness vector size 595–599 bytes.
-// Base (non-witness) weight for 1 P2TR input + 1 P2A output is fixed: 390 wu.
-// Total weight 985–989 wu → vsize 269–270 vB.
-const INSCRIPTION_REVEAL_BACKUP_TX_VBYTES = [269, 270];
-//
+// Reveal tx vsize derivation (1 P2TR inscription input → 1 P2A output).
+// 1) Trigger raw size = 217–219 bytes; panic raw size = 269–271 bytes.
+// 2) Entry = 1 (ver) + 1 (len) + trigger + 1 (len) + panic = 489–493 bytes.
+// 3) Content = "REW"(3) + entry = 492–496 bytes.
+// 4) Tapscript length = 103 (overhead) + content = 595–599 bytes.
+// 5) Witness vector size = 1 (count)
+//    + (1+sig) + (3+tapscript) + (1+33 controlblock)
+//    = 39 + sig + tapscript = 699–703 bytes (sig is 65 bytes).
+// 6) Stripped size = 64 bytes → 256 wu.
+// 7) Add marker/flag (2 bytes) to witness: total weight 957–961 wu.
+// 8) vsize = ceil(weight/4) = 240–241 vB.
+const INSCRIPTION_REVEAL_BACKUP_TX_VBYTES = [240, 241];
+
 // Commit tx vsize derivation (1 P2WPKH input → 1 P2TR output).
 // 1) Stripped size (non‑witness):
 //    - version: 4
@@ -575,7 +578,7 @@ export const createInscriptionBackup = ({
   signers.signBIP32({ psbt: psbtCommit, masterNode });
   commitInputFinalizer({ psbt: psbtCommit });
 
-  const commitTx = psbtCommit.extractTransaction(true);
+  const commitTx = psbtCommit.extractTransaction();
   const commitFee = backupInputValue - targetValue;
   const commitVsize = commitTx.virtualSize();
   const minimumCommitFee = Math.ceil(commitVsize * feeRate);
@@ -593,7 +596,7 @@ export const createInscriptionBackup = ({
   signers.signBIP32({ psbt: psbtReveal, masterNode });
   revealInputFinalizer({ psbt: psbtReveal });
 
-  const revealTx = psbtReveal.extractTransaction(true);
+  const revealTx = psbtReveal.extractTransaction();
   const revealVsize = revealTx.virtualSize();
   if (!INSCRIPTION_REVEAL_BACKUP_TX_VBYTES.includes(revealVsize))
     throw new Error(`Unexpected inscription reveal vsize: ${revealVsize}`);

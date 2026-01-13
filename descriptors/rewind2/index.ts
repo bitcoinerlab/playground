@@ -286,6 +286,12 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     Log(`📦 Submitting vault + commit + reveal txs...`);
     const commitTx = inscriptionPsbts.psbtCommit.extractTransaction();
     const revealTx = inscriptionPsbts.psbtReveal.extractTransaction();
+    console.log({
+      vaultVsize: vaultTx.virtualSize(),
+      commitVsize: commitTx.virtualSize(),
+      revealVsize: revealTx.virtualSize(),
+      revealHexPrefix: revealTx.toHex().slice(0, 10)
+    });
     await explorer.push(vaultTx.toHex());
     await explorer.push(commitTx.toHex());
     await explorer.push(revealTx.toHex());
