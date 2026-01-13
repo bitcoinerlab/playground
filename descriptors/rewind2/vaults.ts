@@ -246,9 +246,14 @@ export const createVault = ({
     network
   });
   const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
-  const backupCost = Math.ceil(
-    Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate
-  );
+
+  let backupCost;
+  if (backupType === 'INSCRIPTION')
+    backupCost =
+      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + P2TR_DUST_THRESHOLD;
+  else if (backupType === 'OP_RETURN_TRUC' || backupType == 'OP_RETURN_V2')
+    backupCost = Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate;
+
   // Run the coinselector
   const selected = coinselectUtxosData({
     utxosData,
@@ -471,20 +476,6 @@ export const createOpReturnBackup = ({
   return psbtBackup;
 };
 
-///**
-// * Estimates the virtual size of a reveal transaction spending an inscription
-// * to a single Taproot (P2TR) output.
-// */
-//const getRevealVsize = (
-//  inscription: InstanceType<typeof Inscription>
-//): number => {
-//  const REVEAL_TX_OVERHEAD_WEIGHT = 42;
-//  const P2TR_OUTPUT_WEIGHT = 172; // 4 x [ (script_pubKey_length:1) + (p2t2(OP_1 OP_PUSH32 <schnorr_public_key>):34) + (amount:8) ]
-//  const totalWeight =
-//    REVEAL_TX_OVERHEAD_WEIGHT + inscription.inputWeight() + P2TR_OUTPUT_WEIGHT;
-//  return Math.ceil(totalWeight / 4);
-//};
-
 // Reveal tx vsize is stable because inscription content size is fixed.
 // Trigger raw size: 217–219 bytes; panic raw size: 269–271 bytes.
 // Entry = 1 (ver) + 1 (len) + trigger + 1 (len) + panic = 489–493 bytes.
@@ -493,7 +484,28 @@ export const createOpReturnBackup = ({
 // → witness vector size 595–599 bytes.
 // Base (non-witness) weight for 1 P2TR input + 1 P2A output is fixed: 390 wu.
 // Total weight 985–989 wu → vsize 269–270 vB.
-const INSCRIPTION_REVEAL_TX_VBYTES = [269, 270];
+const INSCRIPTION_REVEAL_BACKUP_TX_VBYTES = [269, 270];
+//
+// Commit tx vsize derivation (1 P2WPKH input → 1 P2TR output).
+// 1) Stripped size (non‑witness):
+//    - version: 4
+//    - vin count: 1
+//    - input: 41 (prevout 36 + scriptLen 1 + sequence 4)
+//    - vout count: 1
+//    - output (P2TR): 8 (value) + 1 (script len) + 34 (script) = 43
+//    - locktime: 4
+//    → stripped = 4 + 1 + 41 + 1 + 43 + 4 = 94 bytes
+// 2) Witness size for P2WPKH input (including segwit marker/flag):
+//    - marker/flag: 2
+//    - stack count: 1
+//    - sig: 71–73 + 1 len
+//    - pubkey: 33 + 1 len
+//    → witness = 109–111 bytes
+// 3) Weight = stripped*4 + witness = 94*4 + 109–111 = 485–487 wu
+// 4) vsize = ceil(weight / 4) = ceil(485–487 / 4) = 122 vB
+const INSCRIPTION_COMMIT_BACKUP_TX_VBYTES = [122];
+
+const INSCRIPTION_BACKUP_TX_VBYTES = [122 + 269, 122 + 270];
 
 export const createInscriptionBackup = ({
   vaultIndex,
@@ -545,7 +557,9 @@ export const createInscriptionBackup = ({
   if (!backupOut) throw new Error('Backup output not found in vault tx');
   const backupInputValue = backupOut.value;
 
-  const revealFee = Math.ceil(Math.max(INSCRIPTION_REVEAL_TX_VBYTES) * feeRate);
+  const revealFee = Math.ceil(
+    Math.max(...INSCRIPTION_REVEAL_BACKUP_TX_VBYTES) * feeRate
+  );
   const targetValue = P2TR_DUST_THRESHOLD + revealFee;
 
   const psbtCommit = new Psbt({ network });
@@ -581,8 +595,10 @@ export const createInscriptionBackup = ({
 
   const revealTx = psbtReveal.extractTransaction(true);
   const revealVsize = revealTx.virtualSize();
-  if (!INSCRIPTION_REVEAL_TX_VBYTES.includes(revealVsize))
+  if (!INSCRIPTION_REVEAL_BACKUP_TX_VBYTES.includes(revealVsize))
     throw new Error(`Unexpected inscription reveal vsize: ${revealVsize}`);
+  if (!INSCRIPTION_COMMIT_BACKUP_TX_VBYTES.includes(commitVsize))
+    throw new Error(`Unexpected inscription commit vsize: ${commitVsize}`);
 
   return { psbtCommit, psbtReveal };
 };

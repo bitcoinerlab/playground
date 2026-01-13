@@ -72,29 +72,6 @@ export const getUtxosData = (
   });
 };
 
-const getNextVaultIndex = ({
-  discovery,
-  descriptor
-}: {
-  discovery: DiscoveryInstance;
-  descriptor: string;
-}) => {
-  const { txoMap } = discovery.getUtxosAndBalance({
-    descriptor,
-    txStatus: TxStatus.ALL
-  });
-  const usedIndices = new Set<number>();
-  for (const indexedDescriptor of Object.values(txoMap)) {
-    const indexPart = indexedDescriptor.split('~')[1];
-    if (!indexPart || indexPart === 'non-ranged') continue;
-    const parsedIndex = Number.parseInt(indexPart, 10);
-    if (!Number.isNaN(parsedIndex)) usedIndices.add(parsedIndex);
-  }
-  let nextIndex = 0;
-  while (usedIndices.has(nextIndex)) nextIndex += 1;
-  return nextIndex;
-};
-
 //const EXPLORER = `https://tape.rewindbitcoin.com/explorer`;
 const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
@@ -111,7 +88,7 @@ import {
   OP_RETURN_BACKUP_TX_VBYTES,
   VAULT_TX_VBYTES,
   WPKH_DUST_THRESHOLD,
-  //createInscriptionBackup,
+  createInscriptionBackup,
   createOpReturnBackup,
   createVault,
   getBackupDescriptor,
@@ -243,10 +220,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     descriptor: backupDescriptor,
     gapLimit: VAULT_GAP_LIMIT
   });
-  const vaultIndex = getNextVaultIndex({
-    discovery,
-    descriptor: backupDescriptor
-  });
+  const vaultIndex = discovery.getNextIndex({ descriptor: backupDescriptor });
 
   const coldAddress = new Output({
     descriptor: wpkhBIP32({
@@ -278,7 +252,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     mnemonicToSeedSync(randomMnemonic),
     network
   );
-  const backupType = 'OP_RETURN_TRUC';
+  const backupType = 'INSCRIPTION';
   const vault = createVault({
     vaultedAmount: maxVaultableAmount, //Let's vault the max possible
     unvaultKey,
@@ -296,41 +270,70 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const { psbtVault, psbtTrigger, psbtPanic } = vault;
 
-  const psbtBackup = createOpReturnBackup({
-    psbtTrigger,
-    psbtPanic,
-    psbtVault,
-    vaultIndex,
-    masterNode,
-    backupType,
-    network
-  });
-
   const vaultTx = psbtVault.extractTransaction();
-  const backupTx = psbtBackup.extractTransaction();
-  Log(`📦 Submitting vault + backup as a package...`);
-  const pkgUrl = `${ESPLORA_API}/txs/package`;
-  const pkgRes = await fetch(pkgUrl, {
-    method: 'POST',
-    body: JSON.stringify([vaultTx.toHex(), backupTx.toHex()])
-  });
-  if (pkgRes.status === 404) {
-    throw new Error(
-      `Package endpoint not available at ${pkgUrl}. Your Esplora instance likely doesn't support /txs/package`
-    );
-  }
-  if (!pkgRes.ok) {
-    const errText = await pkgRes.text();
-    throw new Error(`Package submit failed (${pkgRes.status}): ${errText}`);
-  }
-  const pkgRespJson = await pkgRes.json();
-  Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
 
-  console.log(`
+  let psbtBackup;
+  if (backupType === 'INSCRIPTION') {
+    const inscriptionPsbts = createInscriptionBackup({
+      vaultIndex,
+      feeRate: FEE_RATE,
+      psbtTrigger,
+      psbtPanic,
+      psbtVault,
+      masterNode,
+      network
+    });
+    Log(`📦 Submitting vault + commit + reveal txs...`);
+    const commitTx = inscriptionPsbts.psbtCommit.extractTransaction();
+    const revealTx = inscriptionPsbts.psbtReveal.extractTransaction();
+    await explorer.push(vaultTx.toHex());
+    await explorer.push(commitTx.toHex());
+    await explorer.push(revealTx.toHex());
+    await explorer.push(psbtTrigger.extractTransaction().toHex());
+
+    console.log(`
+ vault tx id: ${vaultTx.getId()}
+ commit tx id: ${commitTx.getId()}
+ reveal tx id: ${revealTx.getId()}
+ trigger tx id: ${psbtTrigger.extractTransaction().getId()}
+ `);
+  } else {
+    psbtBackup = createOpReturnBackup({
+      psbtTrigger,
+      psbtPanic,
+      psbtVault,
+      vaultIndex,
+      masterNode,
+      backupType,
+      network
+    });
+
+    const backupTx = psbtBackup.extractTransaction();
+    Log(`📦 Submitting vault + backup as a package...`);
+    const pkgUrl = `${ESPLORA_API}/txs/package`;
+    const pkgRes = await fetch(pkgUrl, {
+      method: 'POST',
+      body: JSON.stringify([vaultTx.toHex(), backupTx.toHex()])
+    });
+    if (pkgRes.status === 404) {
+      throw new Error(
+        `Package endpoint not available at ${pkgUrl}. Your Esplora instance likely doesn't support /txs/package`
+      );
+    }
+    if (!pkgRes.ok) {
+      const errText = await pkgRes.text();
+      throw new Error(`Package submit failed (${pkgRes.status}): ${errText}`);
+    }
+    const pkgRespJson = await pkgRes.json();
+    Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
+
+    console.log(`
  vault tx id: ${vaultTx.getId()}
  backup tx id: ${backupTx.getId()}
  trigger tx id: ${psbtTrigger.extractTransaction().getId()}
  `);
+  }
+
   explorer.close();
 };
 if (isWeb) (window as unknown as { start: typeof start }).start = start;
