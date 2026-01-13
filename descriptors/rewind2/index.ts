@@ -39,7 +39,6 @@ import {
 
 //FIXME: this still needs a mechanism to keep some margin for paying anchors
 const FEE_RATE = 2.0;
-const WPKH_DUST_THRESHOLD = 294;
 const vaultFee = Math.ceil(Math.max(...VAULT_TX_VBYTES.withChange) * FEE_RATE);
 const backupValue = Math.ceil(
   Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * FEE_RATE
@@ -111,6 +110,7 @@ import { isWeb, JSONf, Log } from './utils';
 import {
   OP_RETURN_BACKUP_TX_VBYTES,
   VAULT_TX_VBYTES,
+  WPKH_DUST_THRESHOLD,
   //createInscriptionBackup,
   createOpReturnBackup,
   createVault,

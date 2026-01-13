@@ -2,6 +2,8 @@ const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
 const LOCK_BLOCKS = 2;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 const VAULT_PURPOSE = 1073;
+export const P2TR_DUST_THRESHOLD = 330;
+export const WPKH_DUST_THRESHOLD = 294;
 
 const BACKOUT_OUTPUT_INDEX = 1;
 
@@ -36,7 +38,10 @@ import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { coinselect, dustThreshold } from '@bitcoinerlab/coinselect';
 const { Inscription } = InscriptionsFactory(secp256k1);
 
-const getBackupPath = (network: Network, index: number): string => {
+const getInscriptionCommitOutputBackupPath = (
+  network: Network,
+  index: number
+): string => {
   const coinType = network === networks.bitcoin ? "0'" : "1'";
   return `m/86'/${coinType}/0'/9/${index}`;
 };
@@ -466,42 +471,50 @@ export const createOpReturnBackup = ({
   return psbtBackup;
 };
 
-/**
- * Estimates the virtual size of a reveal transaction spending an inscription
- * to a single Taproot (P2TR) output.
- */
-const getRevealVsize = (
-  inscription: InstanceType<typeof Inscription>
-): number => {
-  const REVEAL_TX_OVERHEAD_WEIGHT = 42;
-  const P2TR_OUTPUT_WEIGHT = 172; // 4 x [ (script_pubKey_length:1) + (p2t2(OP_1 OP_PUSH32 <schnorr_public_key>):34) + (amount:8) ]
-  const totalWeight =
-    REVEAL_TX_OVERHEAD_WEIGHT + inscription.inputWeight() + P2TR_OUTPUT_WEIGHT;
-  return Math.ceil(totalWeight / 4);
-};
+///**
+// * Estimates the virtual size of a reveal transaction spending an inscription
+// * to a single Taproot (P2TR) output.
+// */
+//const getRevealVsize = (
+//  inscription: InstanceType<typeof Inscription>
+//): number => {
+//  const REVEAL_TX_OVERHEAD_WEIGHT = 42;
+//  const P2TR_OUTPUT_WEIGHT = 172; // 4 x [ (script_pubKey_length:1) + (p2t2(OP_1 OP_PUSH32 <schnorr_public_key>):34) + (amount:8) ]
+//  const totalWeight =
+//    REVEAL_TX_OVERHEAD_WEIGHT + inscription.inputWeight() + P2TR_OUTPUT_WEIGHT;
+//  return Math.ceil(totalWeight / 4);
+//};
+
+// Reveal tx vsize is stable because inscription content size is fixed.
+// Trigger raw size: 217–219 bytes; panic raw size: 269–271 bytes.
+// Entry = 1 (ver) + 1 (len) + trigger + 1 (len) + panic = 489–493 bytes.
+// Content = "REW" (3) + entry = 492–496 bytes.
+// Inscription witness stack = sig(64) + tapscript + controlblock(33)
+// → witness vector size 595–599 bytes.
+// Base (non-witness) weight for 1 P2TR input + 1 P2A output is fixed: 390 wu.
+// Total weight 985–989 wu → vsize 269–270 vB.
+const INSCRIPTION_REVEAL_TX_VBYTES = [269, 270];
 
 export const createInscriptionBackup = ({
-  backupIndex,
+  vaultIndex,
   feeRate,
   masterNode,
-  utxosData,
   psbtTrigger,
   psbtPanic,
-  network,
-  changeDescriptorWithIndex
+  psbtVault,
+  network
 }: {
-  backupIndex: number;
+  vaultIndex: number;
   feeRate: number;
   masterNode: BIP32Interface;
-  /** to pay for the inscription **/
-  utxosData: UtxosData;
   psbtTrigger: Psbt;
   psbtPanic: Psbt;
+  psbtVault: Psbt;
   network: Network;
-  changeDescriptorWithIndex: { descriptor: string; index: number };
 }) => {
   const triggerTx = psbtTrigger.extractTransaction().toBuffer();
   const panicTx = psbtPanic.extractTransaction().toBuffer();
+  const vaultTx = psbtVault.extractTransaction();
 
   const entry = serializeVaultEntry({
     triggerTx,
@@ -510,74 +523,57 @@ export const createInscriptionBackup = ({
   const header = Buffer.from('REW'); // Magic
   const content = Buffer.concat([header, entry]);
 
-  const backupPath = getBackupPath(network, backupIndex);
-  const backupNode = masterNode.derivePath(backupPath);
+  const commitPath = getInscriptionCommitOutputBackupPath(network, vaultIndex);
+  const commitNode = masterNode.derivePath(commitPath);
 
   const backupInscription = new Inscription({
     contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
     content,
     bip32Derivation: {
       masterFingerprint: masterNode.fingerprint,
-      path: backupPath,
-      pubkey: backupNode.publicKey
+      path: commitPath,
+      pubkey: commitNode.publicKey
     },
     network
   });
 
-  // Minimum value (in satoshis) for a Taproot (P2TR) output to be considered
-  // non-dust and relayable by Bitcoin Core. Assumes 3 sats/vByte
-  const P2TR_DUST_THRESHOLD = 330;
-  //We want to make sure the reveal output won't leave never-spendable utxos in
-  //the mempool
-  const REVEAL_OUTPUT_VALUE = Math.max(
-    P2TR_DUST_THRESHOLD,
-    (P2TR_DUST_THRESHOLD * feeRate) / 3
-  );
-
-  const revealVsize = getRevealVsize(backupInscription);
-  const revealFee = Math.ceil(revealVsize * feeRate);
-  const targetValue = REVEAL_OUTPUT_VALUE + revealFee;
-  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
-
-  const selected = coinselectUtxosData({
-    utxosData,
-    targetOutput: backupInscription as unknown as OutputInstance,
-    targetValue,
-    changeOutput,
-    feeRate
+  const backupOutput = new Output({
+    descriptor: getBackupDescriptor({ masterNode, network, index: vaultIndex }),
+    network
   });
-  if (!selected) throw new Error('Insufficient funds for backup');
+  const backupOut = vaultTx.outs[BACKOUT_OUTPUT_INDEX];
+  if (!backupOut) throw new Error('Backup output not found in vault tx');
+  const backupInputValue = backupOut.value;
+
+  const revealVsize = INSCRIPTION_REVEAL_TX_VBYTES;
+  const revealFee = Math.ceil(revealVsize * feeRate);
+  const targetValue = P2TR_DUST_THRESHOLD + revealFee;
 
   const psbtCommit = new Psbt({ network });
-  const commitFinalizers = [];
-  for (const utxo of selected.utxosData) {
-    const finalizer = utxo.output.updatePsbtAsInput({
-      psbt: psbtCommit,
-      txHex: utxo.txHex,
-      vout: utxo.vout
-    });
-    commitFinalizers.push(finalizer);
-  }
-  for (const target of selected.targets) {
-    target.output.updatePsbtAsOutput({
-      psbt: psbtCommit,
-      value: target.value
-    });
-  }
+  const commitInputFinalizer = backupOutput.updatePsbtAsInput({
+    psbt: psbtCommit,
+    txHex: vaultTx.toHex(),
+    vout: BACKOUT_OUTPUT_INDEX
+  });
+  backupInscription.updatePsbtAsOutput({
+    psbt: psbtCommit,
+    value: targetValue
+  });
   signers.signBIP32({ psbt: psbtCommit, masterNode });
-  commitFinalizers.forEach(finalizer => finalizer({ psbt: psbtCommit }));
+  commitInputFinalizer({ psbt: psbtCommit });
 
-  const inscriptionVout = selected.targets.findIndex(
-    t => t.output === (backupInscription as unknown as OutputInstance)
-  );
-  if (inscriptionVout === -1)
-    throw new Error('Inscription output not found in coin selection');
+  const commitTx = psbtCommit.extractTransaction(true);
+  const commitFee = backupInputValue - targetValue;
+  const commitVsize = commitTx.virtualSize();
+  const minimumCommitFee = Math.ceil(commitVsize * feeRate);
+  if (commitFee < minimumCommitFee)
+    throw new Error('Insufficient vault backup output for commit fee');
 
   const psbtReveal = new Psbt({ network });
   const revealInputFinalizer = backupInscription.updatePsbtAsInput({
     psbt: psbtReveal,
-    txHex: psbtCommit.extractTransaction().toHex(),
-    vout: inscriptionVout
+    txHex: commitTx.toHex(),
+    vout: 0
   });
   psbtReveal.addOutput({
     script: P2A_SCRIPT,
