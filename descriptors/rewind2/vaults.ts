@@ -545,8 +545,7 @@ export const createInscriptionBackup = ({
   if (!backupOut) throw new Error('Backup output not found in vault tx');
   const backupInputValue = backupOut.value;
 
-  const revealVsize = INSCRIPTION_REVEAL_TX_VBYTES;
-  const revealFee = Math.ceil(revealVsize * feeRate);
+  const revealFee = Math.ceil(Math.max(INSCRIPTION_REVEAL_TX_VBYTES) * feeRate);
   const targetValue = P2TR_DUST_THRESHOLD + revealFee;
 
   const psbtCommit = new Psbt({ network });
@@ -575,13 +574,15 @@ export const createInscriptionBackup = ({
     txHex: commitTx.toHex(),
     vout: 0
   });
-  psbtReveal.addOutput({
-    script: P2A_SCRIPT,
-    value: REVEAL_OUTPUT_VALUE
-  });
+  psbtReveal.addOutput({ script: P2A_SCRIPT, value: P2TR_DUST_THRESHOLD });
   //TODO: here this will create a new utxo. also we can remove the original utxos
   signers.signBIP32({ psbt: psbtReveal, masterNode });
   revealInputFinalizer({ psbt: psbtReveal });
+
+  const revealTx = psbtReveal.extractTransaction(true);
+  const revealVsize = revealTx.virtualSize();
+  if (!INSCRIPTION_REVEAL_TX_VBYTES.includes(revealVsize))
+    throw new Error(`Unexpected inscription reveal vsize: ${revealVsize}`);
 
   return { psbtCommit, psbtReveal };
 };
