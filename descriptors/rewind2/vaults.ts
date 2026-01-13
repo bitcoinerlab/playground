@@ -2,7 +2,6 @@ const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
 const LOCK_BLOCKS = 2;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 const VAULT_PURPOSE = 1073;
-export const P2TR_DUST_THRESHOLD = 330;
 export const WPKH_DUST_THRESHOLD = 294;
 
 const BACKOUT_OUTPUT_INDEX = 1;
@@ -249,11 +248,13 @@ export const createVault = ({
 
   let backupCost;
   if (backupType === 'INSCRIPTION')
-    backupCost =
-      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + P2TR_DUST_THRESHOLD;
+    backupCost = Math.ceil(
+      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + WPKH_DUST_THRESHOLD
+    );
   else if (backupType === 'OP_RETURN_TRUC' || backupType == 'OP_RETURN_V2')
-    backupCost = Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate;
+    backupCost = Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate);
 
+  if (backupCost === undefined) throw new Error('backupCost unset');
   // Run the coinselector
   const selected = coinselectUtxosData({
     utxosData,
@@ -476,7 +477,7 @@ export const createOpReturnBackup = ({
   return psbtBackup;
 };
 
-// Reveal tx vsize derivation (1 P2TR inscription input → 1 P2A output).
+// Reveal tx vsize derivation (1 P2TR inscription input → 1 P2WPKH change output).
 // 1) Trigger raw size = 217–219 bytes; panic raw size = 269–271 bytes.
 // 2) Entry = 1 (ver) + 1 (len) + trigger + 1 (len) + panic = 489–493 bytes.
 // 3) Content = "REW"(3) + entry = 492–496 bytes.
@@ -484,10 +485,10 @@ export const createOpReturnBackup = ({
 // 5) Witness vector size = 1 (count)
 //    + (1+sig) + (3+tapscript) + (1+33 controlblock)
 //    = 39 + sig + tapscript = 699–703 bytes (sig is 65 bytes).
-// 6) Stripped size = 64 bytes → 256 wu.
-// 7) Add marker/flag (2 bytes) to witness: total weight 957–961 wu.
-// 8) vsize = ceil(weight/4) = 240–241 vB.
-const INSCRIPTION_REVEAL_BACKUP_TX_VBYTES = [240, 241];
+// 6) Stripped size = 82 bytes → 328 wu.
+// 7) Add marker/flag (2 bytes) to witness: total weight 1029–1033 wu.
+// 8) vsize = ceil(weight/4) = 258–259 vB.
+const INSCRIPTION_REVEAL_BACKUP_TX_VBYTES = [258, 259];
 
 // Commit tx vsize derivation (1 P2WPKH input → 1 P2TR output).
 // 1) Stripped size (non‑witness):
@@ -503,12 +504,17 @@ const INSCRIPTION_REVEAL_BACKUP_TX_VBYTES = [240, 241];
 //    - stack count: 1
 //    - sig: 71–73 + 1 len
 //    - pubkey: 33 + 1 len
-//    → witness = 109–111 bytes
-// 3) Weight = stripped*4 + witness = 94*4 + 109–111 = 485–487 wu
-// 4) vsize = ceil(weight / 4) = ceil(485–487 / 4) = 122 vB
-const INSCRIPTION_COMMIT_BACKUP_TX_VBYTES = [122];
+//    → witness = 108–111 bytes
+// 3) Weight = stripped*4 + witness = 94*4 + 108–111 = 484–487 wu
+// 4) vsize = ceil(weight / 4) = ceil(484–487 / 4) = 121–122 vB
+const INSCRIPTION_COMMIT_BACKUP_TX_VBYTES = [121, 122];
 
-const INSCRIPTION_BACKUP_TX_VBYTES = [122 + 269, 122 + 270];
+export const INSCRIPTION_BACKUP_TX_VBYTES =
+  INSCRIPTION_COMMIT_BACKUP_TX_VBYTES.flatMap(commitVbytes =>
+    INSCRIPTION_REVEAL_BACKUP_TX_VBYTES.map(
+      revealVbytes => commitVbytes + revealVbytes
+    )
+  ).filter((value, index, array) => array.indexOf(value) === index);
 
 export const createInscriptionBackup = ({
   vaultIndex,
@@ -517,6 +523,7 @@ export const createInscriptionBackup = ({
   psbtTrigger,
   psbtPanic,
   psbtVault,
+  changeDescriptorWithIndex,
   network
 }: {
   vaultIndex: number;
@@ -525,6 +532,7 @@ export const createInscriptionBackup = ({
   psbtTrigger: Psbt;
   psbtPanic: Psbt;
   psbtVault: Psbt;
+  changeDescriptorWithIndex: { descriptor: string; index: number };
   network: Network;
 }) => {
   const triggerTx = psbtTrigger.extractTransaction().toBuffer();
@@ -560,10 +568,11 @@ export const createInscriptionBackup = ({
   if (!backupOut) throw new Error('Backup output not found in vault tx');
   const backupInputValue = backupOut.value;
 
+  const revealOutputValue = WPKH_DUST_THRESHOLD;
   const revealFee = Math.ceil(
     Math.max(...INSCRIPTION_REVEAL_BACKUP_TX_VBYTES) * feeRate
   );
-  const targetValue = P2TR_DUST_THRESHOLD + revealFee;
+  const targetValue = revealOutputValue + revealFee;
 
   const psbtCommit = new Psbt({ network });
   const commitInputFinalizer = backupOutput.updatePsbtAsInput({
@@ -591,7 +600,11 @@ export const createInscriptionBackup = ({
     txHex: commitTx.toHex(),
     vout: 0
   });
-  psbtReveal.addOutput({ script: P2A_SCRIPT, value: P2TR_DUST_THRESHOLD });
+  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
+  changeOutput.updatePsbtAsOutput({
+    psbt: psbtReveal,
+    value: revealOutputValue
+  });
   //TODO: here this will create a new utxo. also we can remove the original utxos
   signers.signBIP32({ psbt: psbtReveal, masterNode });
   revealInputFinalizer({ psbt: psbtReveal });

@@ -40,9 +40,6 @@ import {
 //FIXME: this still needs a mechanism to keep some margin for paying anchors
 const FEE_RATE = 2.0;
 const vaultFee = Math.ceil(Math.max(...VAULT_TX_VBYTES.withChange) * FEE_RATE);
-const backupValue = Math.ceil(
-  Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * FEE_RATE
-);
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
 const FAUCET_FETCH_DELAY_MS = 1500;
@@ -85,6 +82,7 @@ const { Output, BIP32 } = DescriptorsFactory(secp256k1);
 import type { Output } from 'bitcoinjs-lib/src/transaction';
 import { isWeb, JSONf, Log } from './utils';
 import {
+  INSCRIPTION_BACKUP_TX_VBYTES,
   OP_RETURN_BACKUP_TX_VBYTES,
   VAULT_TX_VBYTES,
   WPKH_DUST_THRESHOLD,
@@ -152,8 +150,17 @@ Every reload reuses the same mnemonic for convenience.`);
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   //let walletPrevTxId;
 
+  const backupType = 'INSCRIPTION';
+  const backupCost =
+    backupType === 'INSCRIPTION'
+      ? Math.ceil(
+        Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * FEE_RATE +
+        WPKH_DUST_THRESHOLD
+      )
+      : Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * FEE_RATE);
+
   let minVaultableAmount = WPKH_DUST_THRESHOLD;
-  let maxVaultableAmount = utxosAndBalance.balance - vaultFee - backupValue;
+  let maxVaultableAmount = utxosAndBalance.balance - vaultFee - backupCost;
   // Trigger tx pays zero fees, so unvaulted amount equals vaulted amount.
   if (maxVaultableAmount < minVaultableAmount) {
     Log(
@@ -201,7 +208,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
   minVaultableAmount = WPKH_DUST_THRESHOLD;
-  maxVaultableAmount = utxosAndBalance.balance - vaultFee - backupValue;
+  maxVaultableAmount = utxosAndBalance.balance - vaultFee - backupCost;
 
   if (maxVaultableAmount < minVaultableAmount)
     throw new Error(
@@ -252,7 +259,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     mnemonicToSeedSync(randomMnemonic),
     network
   );
-  const backupType = 'INSCRIPTION';
   const vault = createVault({
     vaultedAmount: maxVaultableAmount, //Let's vault the max possible
     unvaultKey,
@@ -281,23 +287,17 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       psbtPanic,
       psbtVault,
       masterNode,
+      changeDescriptorWithIndex,
       network
     });
     Log(`📦 Submitting vault + commit + reveal txs...`);
     const commitTx = inscriptionPsbts.psbtCommit.extractTransaction();
     const revealTx = inscriptionPsbts.psbtReveal.extractTransaction();
-    console.log({
-      vaultVsize: vaultTx.virtualSize(),
-      commitVsize: commitTx.virtualSize(),
-      revealVsize: revealTx.virtualSize(),
-      revealHexPrefix: revealTx.toHex().slice(0, 10)
-    });
     await explorer.push(vaultTx.toHex());
     await explorer.push(commitTx.toHex());
     await explorer.push(revealTx.toHex());
-    await explorer.push(psbtTrigger.extractTransaction().toHex());
 
-    console.log(`
+    Log(`
  vault tx id: ${vaultTx.getId()}
  commit tx id: ${commitTx.getId()}
  reveal tx id: ${revealTx.getId()}
@@ -333,7 +333,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     const pkgRespJson = await pkgRes.json();
     Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
 
-    console.log(`
+    Log(`
  vault tx id: ${vaultTx.getId()}
  backup tx id: ${backupTx.getId()}
  trigger tx id: ${psbtTrigger.extractTransaction().getId()}
