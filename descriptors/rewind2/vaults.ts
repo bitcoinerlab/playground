@@ -419,7 +419,7 @@ export const createOpReturnBackup = ({
   psbtVault: Psbt;
   vaultIndex: number;
   masterNode: BIP32Interface;
-  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
+  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2';
   network: Network;
 }) => {
   if (backupType !== 'OP_RETURN_TRUC' && backupType !== 'OP_RETURN_V2')
