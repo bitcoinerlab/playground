@@ -249,7 +249,7 @@ export const createVault = ({
   let backupCost;
   if (backupType === 'INSCRIPTION')
     backupCost = Math.ceil(
-      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + WPKH_DUST_THRESHOLD
+      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + WPKH_DUST_THRESHOLD //FIXME: WPKH_DUST_THRESHOLD cannot be assuned, since the wallet may be of other type...
     );
   else if (backupType === 'OP_RETURN_TRUC' || backupType == 'OP_RETURN_V2')
     backupCost = Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate);
