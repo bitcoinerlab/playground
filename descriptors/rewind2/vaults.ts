@@ -34,7 +34,7 @@ import { encode as encodeVarInt, encodingLength } from 'varuint-bitcoin';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
 import { InscriptionsFactory } from './inscriptions';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
-import { coinselect, dustThreshold } from '@bitcoinerlab/coinselect';
+import { coinselect, dustThreshold, maxFunds } from '@bitcoinerlab/coinselect';
 const { Inscription } = InscriptionsFactory(secp256k1);
 
 const getInscriptionCommitOutputBackupPath = (
@@ -107,23 +107,6 @@ const serializeVaultEntry = ({
  */
 export const OP_RETURN_BACKUP_TX_VBYTES = [586, 587, 588, 589, 590];
 
-/**
- * Estimated vbytes for the vault tx (1 P2WPKH input, 2–3 P2WPKH outputs).
- *
- * - Without change (vault + backup outputs):
- *   - Stripped size: 4 + 1 + 41 + 1 + (31 * 2) + 4 = 113 bytes.
- *   - Witness size: 109–111 bytes (segwit marker/flag + count + sig(71–73) + pubkey).
- *   - vbytes = ceil((113*4 + 109–111) / 4) = 141 vB.
- * - With change (vault + backup + change outputs):
- *   - Stripped size: 4 + 1 + 41 + 1 + (31 * 3) + 4 = 144 bytes.
- *   - Witness size: 109–111 bytes.
- *   - vbytes = ceil((144*4 + 109–111) / 4) = 172 vB.
- */
-export const VAULT_TX_VBYTES = {
-  withoutChange: [141],
-  withChange: [172]
-};
-
 const createTriggerDescriptor = ({
   unvaultKey,
   panicKey,
@@ -151,18 +134,19 @@ const getOutputsWithValue = (utxosData: UtxosData) =>
     if (!out) throw new Error('Invalid utxo');
     return { output: utxo.output, value: out.value };
   });
+
 const coinselectUtxosData = ({
   utxosData,
-  targetOutput,
-  targetValue,
+  vaultOutput,
+  vaultedAmount,
   backupOutput,
   backupCost,
   changeOutput,
   feeRate
 }: {
   utxosData: UtxosData;
-  targetOutput: OutputInstance;
-  targetValue: number;
+  vaultOutput: OutputInstance;
+  vaultedAmount: number | 'MAX_FUNDS';
   backupOutput?: OutputInstance;
   backupCost?: number;
   changeOutput: OutputInstance;
@@ -170,23 +154,57 @@ const coinselectUtxosData = ({
 }) => {
   const utxos = getOutputsWithValue(utxosData);
   if (!utxos.length) return;
-  if (targetValue <= dustThreshold(targetOutput)) return;
+  if (
+    typeof vaultedAmount === 'number' &&
+    vaultedAmount <= dustThreshold(vaultOutput)
+  )
+    return;
   if (backupOutput && backupCost !== undefined) {
     if (backupCost <= dustThreshold(backupOutput)) return;
   } else if (backupOutput || backupCost !== undefined) {
     throw new Error('backupOutput and backupCost must be provided together');
   }
-  const targets = [{ output: targetOutput, value: targetValue }];
-  if (backupOutput && backupCost !== undefined)
-    targets.push({ output: backupOutput, value: backupCost });
+  let coinselected;
+  let targets;
+  if (vaultedAmount === 'MAX_FUNDS') {
+    targets = [];
+    if (backupOutput && backupCost !== undefined)
+      targets.push({ output: backupOutput, value: backupCost });
 
-  const coinselected = coinselect({
-    utxos,
-    targets,
-    remainder: changeOutput,
-    feeRate
-  });
-  if (!coinselected) return;
+    coinselected = maxFunds({
+      utxos,
+      targets,
+      remainder: vaultOutput,
+      feeRate
+    });
+    if (!coinselected) return;
+    const vaultTarget = coinselected.targets.find(
+      target => target.output === vaultOutput
+    );
+    if (!vaultTarget) return;
+    if (vaultTarget.value <= dustThreshold(vaultOutput)) return;
+    // maxFunds returns targets with the remainder (vault output) last, while createVault expects the vault output first and backup second
+    targets = [
+      { output: vaultOutput, value: vaultTarget.value },
+      ...(backupOutput && backupCost !== undefined
+        ? [{ output: backupOutput, value: backupCost }]
+        : [])
+    ];
+    vaultedAmount = vaultTarget.value;
+  } else {
+    targets = [{ output: vaultOutput, value: vaultedAmount }];
+    if (backupOutput && backupCost !== undefined)
+      targets.push({ output: backupOutput, value: backupCost });
+
+    coinselected = coinselect({
+      utxos,
+      targets,
+      remainder: changeOutput,
+      feeRate
+    });
+    if (!coinselected) return;
+    targets = coinselected.targets;
+  }
   const selectedUtxosData =
     coinselected.utxos.length === utxosData.length
       ? utxosData
@@ -195,11 +213,80 @@ const coinselectUtxosData = ({
         if (!utxoData) throw new Error('Invalid utxoData');
         return utxoData;
       });
+
   return {
     vsize: coinselected.vsize,
     fee: coinselected.fee,
-    targets: coinselected.targets,
+    targets,
+    vaultedAmount,
     utxosData: selectedUtxosData
+  };
+};
+
+export const estimateVaultTxVsize = ({
+  vaultedAmount,
+  feeRate,
+  utxosData,
+  masterNode,
+  randomMasterNode,
+  changeDescriptorWithIndex,
+  vaultIndex,
+  backupType,
+  network
+}: {
+  vaultedAmount: number | 'MAX_FUNDS';
+  /** The unvault key expression that must be used to create triggerDescriptor */
+  unvaultKey: string;
+  feeRate: number;
+  utxosData: UtxosData;
+  masterNode: BIP32Interface;
+  randomMasterNode: BIP32Interface;
+  coldAddress: string;
+  changeDescriptorWithIndex: { descriptor: string; index: number };
+  vaultIndex: number;
+  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
+  network: Network;
+}) => {
+  const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`;
+  const randomKeyPath = `/0/0`;
+  const randomKey = keyExpressionBIP32({
+    masterNode: randomMasterNode,
+    originPath: randomOriginPath,
+    keyPath: randomKeyPath
+  });
+  const vaultOutput = new Output({ descriptor: `wpkh(${randomKey})`, network });
+  const backupOutput = new Output({
+    descriptor: getBackupDescriptor({ masterNode, network, index: vaultIndex }),
+    network
+  });
+  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
+
+  let backupCost;
+  if (backupType === 'INSCRIPTION')
+    backupCost = Math.ceil(
+      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + WPKH_DUST_THRESHOLD //FIXME: WPKH_DUST_THRESHOLD cannot be assuned, since the wallet may be of other type...
+    );
+  else if (backupType === 'OP_RETURN_TRUC' || backupType == 'OP_RETURN_V2')
+    backupCost = Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate);
+
+  if (backupCost === undefined) throw new Error('backupCost unset');
+  // Run the coinselector
+  const selected = coinselectUtxosData({
+    utxosData,
+    vaultOutput,
+    vaultedAmount,
+    backupOutput,
+    backupCost,
+    changeOutput,
+    feeRate
+  });
+  if (!selected) return;
+
+  return {
+    vsize: selected.vsize,
+    vaultedAmount: selected.vaultedAmount,
+    targets: selected.targets,
+    utxosData: selected.utxosData
   };
 };
 
@@ -258,8 +345,8 @@ export const createVault = ({
   // Run the coinselector
   const selected = coinselectUtxosData({
     utxosData,
-    targetOutput: vaultOutput,
-    targetValue: vaultedAmount,
+    vaultOutput,
+    vaultedAmount,
     backupOutput,
     backupCost,
     changeOutput,
@@ -313,12 +400,6 @@ export const createVault = ({
   const vaultVsize = txVault.virtualSize();
   if (vaultVsize > selected.vsize)
     throw new Error('vsize larger than coinselected estimated one');
-  const expectedVaultVbytes =
-    vaultTargets.length > 2
-      ? VAULT_TX_VBYTES.withChange
-      : VAULT_TX_VBYTES.withoutChange;
-  if (!expectedVaultVbytes.includes(vaultVsize))
-    throw new Error(`Unexpected vault vsize: ${vaultVsize}`);
   const feeRateVault = vaultMiningFee / txVault.virtualSize();
   if (feeRateVault < 1) return 'UNKNOWN_ERROR';
 

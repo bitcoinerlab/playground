@@ -39,7 +39,6 @@ import {
 
 //FIXME: this still needs a mechanism to keep some margin for paying anchors
 const FEE_RATE = 2.0;
-const vaultFee = Math.ceil(Math.max(...VAULT_TX_VBYTES.withChange) * FEE_RATE);
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
 const FAUCET_FETCH_DELAY_MS = 1500;
@@ -84,8 +83,8 @@ import { isWeb, JSONf, Log } from './utils';
 import {
   INSCRIPTION_BACKUP_TX_VBYTES,
   OP_RETURN_BACKUP_TX_VBYTES,
-  VAULT_TX_VBYTES,
   WPKH_DUST_THRESHOLD,
+  estimateVaultTxVsize,
   createInscriptionBackup,
   createOpReturnBackup,
   createVault,
@@ -96,6 +95,12 @@ import {
 const start = async () => {
   await explorer.connect();
   const discovery = new Discovery();
+
+  const randomMnemonic = generateMnemonic();
+  const randomMasterNode = BIP32.fromSeed(
+    mnemonicToSeedSync(randomMnemonic),
+    network
+  );
 
   let mnemonic; //Let's create a basic wallet:
   let emergencyMnemonic; //Let's create a cold wallet (emergency):
@@ -160,6 +165,20 @@ Every reload reuses the same mnemonic for convenience.`);
       : Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * FEE_RATE);
 
   let minVaultableAmount = WPKH_DUST_THRESHOLD;
+  const vaultFeeExact = estimateVaultTxVsize({
+    vaultedAmount: 'MAX_FUNDS',
+    feeRate: FEE_RATE,
+    utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
+    masterNode,
+    randomMasterNode,
+    changeDescriptorWithIndex,
+    vaultIndex: 0, //Dummmy value is ok
+    backupType,
+    network
+  });
+  const vaultFee = Math.ceil(
+    Math.max(...VAULT_TX_VBYTES.withChange) * FEE_RATE
+  );
   let maxVaultableAmount = utxosAndBalance.balance - vaultFee - backupCost;
   // Trigger tx pays zero fees, so unvaulted amount equals vaulted amount.
   if (maxVaultableAmount < minVaultableAmount) {
@@ -254,11 +273,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     keyPath: '/0'
   });
 
-  const randomMnemonic = generateMnemonic();
-  const randomMasterNode = BIP32.fromSeed(
-    mnemonicToSeedSync(randomMnemonic),
-    network
-  );
   const vault = createVault({
     vaultedAmount: maxVaultableAmount, //Let's vault the max possible
     unvaultKey,
