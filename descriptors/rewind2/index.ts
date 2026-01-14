@@ -20,6 +20,10 @@
 //core 30 submit package limitations: https://bitcoincore.org/en/doc/30.0.0/rpc/rawtransactions/submitpackage/
 //use op_return instrad of inscriptions? This way we can make sure the backup
 //is processed (as a package) together with the vault: https://bitcoin.stackexchange.com/questions/126208/why-would-anyone-use-op-return-over-inscriptions-aside-from-fees
+
+//TODO: shift the fee payment to the end of the backup chain and submit all the
+//txs as a package
+
 import './codesandboxFixes';
 import { readFileSync, writeFileSync } from 'fs';
 import {
