@@ -3,7 +3,9 @@ const LOCK_BLOCKS = 2;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 const VAULT_PURPOSE = 1073;
 export const WPKH_DUST_THRESHOLD = 294;
+const MIN_RELAY_FEE_RATE = 0.1;
 
+const VAULT_OUTPUT_INDEX = 0;
 const BACKOUT_OUTPUT_INDEX = 1;
 
 export type UtxosData = Array<{
@@ -186,17 +188,25 @@ const coinselectVaultUtxosData = ({
     if (vaultTarget.value <= dustThreshold(vaultOutput))
       return `VAULT TARGET OUT BELOW DUST: ${vaultTarget.value} <= ${dustThreshold(vaultOutput)}`;
     // maxFunds returns targets with the remainder (vault output) last, while createVault expects the vault output first and backup second
-    targets = [
-      { output: vaultOutput, value: vaultTarget.value },
-      ...(backupOutput && backupCost !== undefined
-        ? [{ output: backupOutput, value: backupCost }]
-        : [])
-    ];
+    targets = [];
+    targets[VAULT_OUTPUT_INDEX] = {
+      output: vaultOutput,
+      value: vaultTarget.value
+    };
+    if (backupOutput && backupCost !== undefined)
+      targets[BACKOUT_OUTPUT_INDEX] = {
+        output: backupOutput,
+        value: backupCost
+      };
     vaultedAmount = vaultTarget.value;
   } else {
-    targets = [{ output: vaultOutput, value: vaultedAmount }];
+    targets = [];
+    targets[VAULT_OUTPUT_INDEX] = { output: vaultOutput, value: vaultedAmount };
     if (backupOutput && backupCost !== undefined)
-      targets.push({ output: backupOutput, value: backupCost });
+      targets[BACKOUT_OUTPUT_INDEX] = {
+        output: backupOutput,
+        value: backupCost
+      };
 
     coinselected = coinselect({
       utxos,
@@ -255,6 +265,7 @@ export const getVaultContext = ({
   feeRate,
   utxosData,
   vaultedAmount,
+  shiftFeesToBackupEnd = false,
   network
 }: {
   masterNode: BIP32Interface;
@@ -265,6 +276,7 @@ export const getVaultContext = ({
   feeRate: number;
   vaultedAmount: number | 'MAX_FUNDS';
   utxosData: UtxosData;
+  shiftFeesToBackupEnd?: boolean;
   network: Network;
 }) => {
   const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`; //FIXME: can 84 be assumed here?
@@ -295,25 +307,31 @@ export const getVaultContext = ({
     feeRate
   });
 
-  //TODO: here alter the targets if a new param called "matchMinRelayFeeRate: boolean is passed.
-  //if true, then we want the vaultTx to pay the minimum fee possibl and the
-  //fee will be paid as CPFP in the last tx of the backup chain.
-  //so if matchMinRelayFeeRate = true and is OP_RETURN_TRUC, then fee can be
-  //zero. If matchMinRelayFeeRate (defaults to false) is false and is OP_RETURN_V2 or Inscription
-  //then pay fee rate of 0.1 (use a constant)
-  //The backupCost wil be still be the same but also return a new var
-  //called backupOutputValue that will receive more sats (tge one subtracted
-  //to the vaultTx), since these sapts will fund the CPFP at the end
-  //createVault also will receive a matchMinRelayFeeRate var (defaults to false)
-  //that will be assed to this getVaultContext.
-  //Then, in createInscriptionBackup more work has to be done.
-  //It must also receive matchMinRelayFeeRate. If true, then we want the commit
-  //tx to have feeRate of 0.1 sats/vbyte, so adjust the output value of the
-  //commit tx.  I guess this one will need to be adjusted there:
-  //const revealFee = Math.ceil( Math.max(...INSCRIPTION_REVEAL_BACKUP_TX_VBYTES) * feeRate); -- this is weak.
-  //Better het the commitOutputValue as the backupOut.value minus the fee for
-  //the commit tx that matches the min relay fee rate. Verify all what i
-  //propose is sound!
+  let backupOutputValue = backupCost;
+  if (shiftFeesToBackupEnd && typeof selected !== 'string') {
+    const minRelayFeeRate =
+      backupType === 'OP_RETURN_TRUC' ? 0 : MIN_RELAY_FEE_RATE;
+    const minRelayFee = Math.ceil(selected.vsize * minRelayFeeRate);
+    if (selected.fee < minRelayFee)
+      throw new Error(
+        `Coinselected fee (${selected.fee}) below min relay fee (${minRelayFee})`
+      );
+    const feeShift = selected.fee - minRelayFee;
+    if (feeShift > 0) {
+      backupOutputValue = backupCost + feeShift;
+      const backupTargetIndex = selected.targets.findIndex(
+        target => target.output === backupOutput
+      );
+      if (backupTargetIndex < 0)
+        throw new Error('Backup output target not found');
+      selected.targets = selected.targets.map((target, index) =>
+        index === backupTargetIndex
+          ? { ...target, value: backupOutputValue }
+          : target
+      );
+      selected.fee = minRelayFee;
+    }
+  }
 
   return {
     randomKey,
@@ -322,6 +340,7 @@ export const getVaultContext = ({
     backupOutput,
     changeOutput,
     backupCost,
+    backupOutputValue,
     selected
   };
 };
@@ -337,6 +356,7 @@ export const createVault = ({
   changeDescriptorWithIndex,
   vaultIndex,
   backupType,
+  shiftFeesToBackupEnd = false,
   network
 }: {
   vaultedAmount: number;
@@ -350,6 +370,7 @@ export const createVault = ({
   changeDescriptorWithIndex: { descriptor: string; index: number };
   vaultIndex: number;
   backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
+  shiftFeesToBackupEnd?: boolean;
   network: Network;
 }) => {
   const {
@@ -358,7 +379,8 @@ export const createVault = ({
     vaultOutput,
     backupOutput,
     selected,
-    backupCost
+    backupCost,
+    backupOutputValue
   } = getVaultContext({
     masterNode,
     randomMasterNode,
@@ -368,14 +390,15 @@ export const createVault = ({
     feeRate,
     utxosData,
     vaultedAmount,
+    shiftFeesToBackupEnd,
     network
   });
   if (typeof selected === 'string') return 'COINSELECT_ERROR: ' + selected;
   const vaultUtxosData = selected.utxosData;
   const vaultTargets = selected.targets;
-  if (vaultTargets[0]?.output !== vaultOutput)
+  if (vaultTargets[VAULT_OUTPUT_INDEX]?.output !== vaultOutput)
     throw new Error("coinselect first output should be the vault's output");
-  if (vaultTargets[1]?.output !== backupOutput)
+  if (vaultTargets[BACKOUT_OUTPUT_INDEX]?.output !== backupOutput)
     throw new Error('coinselect second output should be the backup output');
   if (vaultTargets.length > 3)
     throw new Error(
@@ -407,7 +430,7 @@ export const createVault = ({
     target => target.output === backupOutput
   );
   if (backupOutputIndex !== BACKOUT_OUTPUT_INDEX) return 'UNKNOWN_ERROR';
-  if (backupCost !== vaultTargets[backupOutputIndex]?.value)
+  if (backupOutputValue !== vaultTargets[backupOutputIndex]?.value)
     return 'UNKNOWN_ERROR';
   //Sign
   signers.signBIP32({ psbt: psbtVault, masterNode });
@@ -508,6 +531,7 @@ export const createVault = ({
     psbtTrigger,
     psbtPanic,
     backupCost,
+    backupOutputValue,
     vaultUtxosData,
     randomMasterNode
   };
@@ -621,6 +645,7 @@ export const createInscriptionBackup = ({
   psbtPanic,
   psbtVault,
   changeDescriptorWithIndex,
+  shiftFeesToBackupEnd = false,
   network
 }: {
   vaultIndex: number;
@@ -630,6 +655,7 @@ export const createInscriptionBackup = ({
   psbtPanic: Psbt;
   psbtVault: Psbt;
   changeDescriptorWithIndex: { descriptor: string; index: number };
+  shiftFeesToBackupEnd?: boolean;
   network: Network;
 }) => {
   const triggerTx = psbtTrigger.extractTransaction().toBuffer();
@@ -663,16 +689,19 @@ export const createInscriptionBackup = ({
   });
   const backupOut = vaultTx.outs[BACKOUT_OUTPUT_INDEX];
   if (!backupOut) throw new Error('Backup output not found in vault tx');
-  const backupInputValue = backupOut.value;
+  const backupOutputValue = backupOut.value;
 
   // NOTE: wallet balance will remain at least WPKH_DUST_THRESHOLD
   // (294 sats) because the reveal tx creates a dust change output that is
   // intentionally kept spendable.
   const revealOutputValue = WPKH_DUST_THRESHOLD; //FIXME: WPKH can be assumed always? this one must match TAGrfgkjnfdgfgfdg
-  const revealFee = Math.ceil(
-    Math.max(...INSCRIPTION_REVEAL_BACKUP_TX_VBYTES) * feeRate
+  const commitFeeRate = shiftFeesToBackupEnd ? MIN_RELAY_FEE_RATE : feeRate;
+  const commitFeeTarget = Math.ceil(
+    Math.max(...INSCRIPTION_COMMIT_BACKUP_TX_VBYTES) * commitFeeRate
   );
-  const commitOutputValue = revealOutputValue + revealFee;
+  const commitOutputValue = backupOutputValue - commitFeeTarget;
+  if (commitOutputValue <= revealOutputValue)
+    throw new Error('Insufficient vault backup output for reveal fee');
 
   const psbtCommit = new Psbt({ network });
   const commitInputFinalizer = backupOutput.updatePsbtAsInput({
@@ -688,11 +717,7 @@ export const createInscriptionBackup = ({
   commitInputFinalizer({ psbt: psbtCommit });
 
   const commitTx = psbtCommit.extractTransaction();
-  const commitFee = backupInputValue - commitOutputValue;
   const commitVsize = commitTx.virtualSize();
-  const minimumCommitFee = Math.ceil(commitVsize * feeRate);
-  if (commitFee < minimumCommitFee)
-    throw new Error('Insufficient vault backup output for commit fee');
 
   const psbtReveal = new Psbt({ network });
   const revealInputFinalizer = backupInscription.updatePsbtAsInput({

@@ -47,6 +47,7 @@ const FEE_RATE = 2.0;
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
 const FAUCET_FETCH_DELAY_MS = 1500;
+const SHIFT_FEES_TO_BACKUP_END = true;
 
 export const getUtxosData = (
   utxos: Array<string>,
@@ -175,6 +176,7 @@ Every reload reuses the same mnemonic for convenience.`);
     changeDescriptorWithIndex: getChangeDescriptorWithIndex(discovery),
     vaultIndex: 0, //Dummmy value is ok just to grab vsize
     backupType: BACKUP_TYPE,
+    shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
     network
   });
   let coinselectedVaultMaxFunds = vaultMaxFundsContext.selected;
@@ -246,6 +248,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     changeDescriptorWithIndex: getChangeDescriptorWithIndex(discovery),
     vaultIndex: 0, //Dummmy value is ok just to grab vsize
     backupType: BACKUP_TYPE,
+    shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
     network
   });
   coinselectedVaultMaxFunds = vaultMaxFundsContext.selected;
@@ -303,6 +306,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     changeDescriptorWithIndex,
     vaultIndex,
     backupType: BACKUP_TYPE,
+    shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
     network
   });
   if (typeof vault === 'string') throw new Error(vault);
@@ -319,7 +323,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     }`
   );
 
-  let psbtBackup;
   if (BACKUP_TYPE === 'INSCRIPTION') {
     const inscriptionPsbts = createInscriptionBackup({
       vaultIndex,
@@ -329,14 +332,32 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       psbtVault,
       masterNode,
       changeDescriptorWithIndex,
+      shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
       network
     });
-    Log(`📦 Submitting vault + commit + reveal txs...`);
     const commitTx = inscriptionPsbts.psbtCommit.extractTransaction();
     const revealTx = inscriptionPsbts.psbtReveal.extractTransaction();
-    await explorer.push(vaultTx.toHex());
-    await explorer.push(commitTx.toHex());
-    await explorer.push(revealTx.toHex());
+    Log(`📦 Submitting vault + commit + reveal txs as a package...`);
+    const pkgUrl = `${ESPLORA_API}/txs/package`;
+    const pkgRes = await fetch(pkgUrl, {
+      method: 'POST',
+      body: JSON.stringify([
+        vaultTx.toHex(),
+        commitTx.toHex(),
+        revealTx.toHex()
+      ])
+    });
+    if (pkgRes.status === 404) {
+      throw new Error(
+        `Package endpoint not available at ${pkgUrl}. Your Esplora instance likely doesn't support /txs/package`
+      );
+    }
+    if (!pkgRes.ok) {
+      const errText = await pkgRes.text();
+      throw new Error(`Package submit failed (${pkgRes.status}): ${errText}`);
+    }
+    const pkgRespJson = await pkgRes.json();
+    Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
 
     Log(`
  vault tx id: ${vaultTx.getId()}
@@ -345,7 +366,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
  trigger tx id: ${psbtTrigger.extractTransaction().getId()}
  `);
   } else {
-    psbtBackup = createOpReturnBackup({
+    const psbtBackup = createOpReturnBackup({
       psbtTrigger,
       psbtPanic,
       psbtVault,
