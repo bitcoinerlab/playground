@@ -209,10 +209,10 @@ const coinselectUtxosData = ({
     coinselected.utxos.length === utxosData.length
       ? utxosData
       : coinselected.utxos.map(utxo => {
-        const utxoData = utxosData[utxos.indexOf(utxo)];
-        if (!utxoData) throw new Error('Invalid utxoData');
-        return utxoData;
-      });
+          const utxoData = utxosData[utxos.indexOf(utxo)];
+          if (!utxoData) throw new Error('Invalid utxoData');
+          return utxoData;
+        });
 
   return {
     vsize: coinselected.vsize,
@@ -223,7 +223,7 @@ const coinselectUtxosData = ({
   };
 };
 
-export const estimateVaultTxVsize = ({
+export const estimateVaultTx = ({
   vaultedAmount,
   feeRate,
   utxosData,
@@ -235,13 +235,10 @@ export const estimateVaultTxVsize = ({
   network
 }: {
   vaultedAmount: number | 'MAX_FUNDS';
-  /** The unvault key expression that must be used to create triggerDescriptor */
-  unvaultKey: string;
   feeRate: number;
   utxosData: UtxosData;
   masterNode: BIP32Interface;
   randomMasterNode: BIP32Interface;
-  coldAddress: string;
   changeDescriptorWithIndex: { descriptor: string; index: number };
   vaultIndex: number;
   backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
@@ -283,6 +280,7 @@ export const estimateVaultTxVsize = ({
   if (!selected) return;
 
   return {
+    fee: selected.fee,
     vsize: selected.vsize,
     vaultedAmount: selected.vaultedAmount,
     targets: selected.targets,

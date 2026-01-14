@@ -68,6 +68,17 @@ export const getUtxosData = (
   });
 };
 
+const getChangeDescriptorWithIndex = (discovery: DiscoveryInstance) => {
+  const accounts = discovery.getUsedAccounts();
+  const mainAccount = accounts[0];
+  if (!mainAccount) throw new Error('Could not find the main account');
+  const changeDescriptor = mainAccount.replace(/\/0\/\*/g, '/1/*');
+  return {
+    descriptor: changeDescriptor,
+    index: discovery.getNextIndex({ descriptor: changeDescriptor })
+  };
+};
+
 //const EXPLORER = `https://tape.rewindbitcoin.com/explorer`;
 const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
@@ -84,7 +95,7 @@ import {
   INSCRIPTION_BACKUP_TX_VBYTES,
   OP_RETURN_BACKUP_TX_VBYTES,
   WPKH_DUST_THRESHOLD,
-  estimateVaultTxVsize,
+  estimateVaultTx,
   createInscriptionBackup,
   createOpReturnBackup,
   createVault,
@@ -149,37 +160,35 @@ Every reload reuses the same mnemonic for convenience.`);
     txStatus: TxStatus.ALL
   }).length;
 
-  // Check if the wallet already has confirmed funds
-  let utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
-  //const walletAddressInfo = await explorer.fetchAddress(walletAddress);
-  Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
-  //let walletPrevTxId;
-
   const backupType = 'INSCRIPTION';
   const backupCost =
     backupType === 'INSCRIPTION'
       ? Math.ceil(
-        Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * FEE_RATE +
-        WPKH_DUST_THRESHOLD
-      )
+          Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * FEE_RATE +
+            WPKH_DUST_THRESHOLD
+        )
       : Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * FEE_RATE);
 
-  let minVaultableAmount = WPKH_DUST_THRESHOLD;
-  const vaultFeeExact = estimateVaultTxVsize({
+  const minVaultableAmount = WPKH_DUST_THRESHOLD; //FIXME: what if not using WPKH !?!?!
+
+  let utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
+  let vaultMaxFundsTxEstimate = estimateVaultTx({
     vaultedAmount: 'MAX_FUNDS',
     feeRate: FEE_RATE,
     utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
     masterNode,
     randomMasterNode,
-    changeDescriptorWithIndex,
-    vaultIndex: 0, //Dummmy value is ok
+    changeDescriptorWithIndex: getChangeDescriptorWithIndex(discovery),
+    vaultIndex: 0, //Dummmy value is ok just to grab vsize
     backupType,
     network
   });
-  const vaultFee = Math.ceil(
-    Math.max(...VAULT_TX_VBYTES.withChange) * FEE_RATE
-  );
-  let maxVaultableAmount = utxosAndBalance.balance - vaultFee - backupCost;
+  let maxVaultableAmount = vaultMaxFundsTxEstimate
+    ? utxosAndBalance.balance - vaultMaxFundsTxEstimate.fee - backupCost
+    : 0;
+
+  Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
+
   // Trigger tx pays zero fees, so unvaulted amount equals vaulted amount.
   if (maxVaultableAmount < minVaultableAmount) {
     Log(
@@ -225,13 +234,26 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     }
   } else Log(`💰 Existing balance detected. Skipping faucet.`);
 
+  //re-compute values after coinselect:
   utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
-  minVaultableAmount = WPKH_DUST_THRESHOLD;
-  maxVaultableAmount = utxosAndBalance.balance - vaultFee - backupCost;
+  vaultMaxFundsTxEstimate = estimateVaultTx({
+    vaultedAmount: 'MAX_FUNDS',
+    feeRate: FEE_RATE,
+    utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
+    masterNode,
+    randomMasterNode,
+    changeDescriptorWithIndex: getChangeDescriptorWithIndex(discovery),
+    vaultIndex: 0, //Dummmy value is ok just to grab vsize
+    backupType,
+    network
+  });
+  maxVaultableAmount = vaultMaxFundsTxEstimate
+    ? utxosAndBalance.balance - vaultMaxFundsTxEstimate.fee - backupCost
+    : 0;
 
   if (maxVaultableAmount < minVaultableAmount)
     throw new Error(
-      `Balance too low: vaultable amount ${maxVaultableAmount} below dust threshold ${WPKH_DUST_THRESHOLD}.`
+      `Balance too low after coinselect: vaultable amount ${maxVaultableAmount} below dust threshold ${minVaultableAmount}.`
     );
 
   const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);
@@ -257,16 +279,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     }),
     network
   }).getAddress();
-  const accounts = discovery.getUsedAccounts();
-  const mainAccount = accounts[0];
-  if (!mainAccount) throw new Error('Could not find the main account');
-  const changeDescriptor = mainAccount.replace(/\/0\/\*/g, '/1/*');
-  const changeDescriptorWithIndex = {
-    descriptor: changeDescriptor,
-    index: discovery.getNextIndex({
-      descriptor: changeDescriptor
-    })
-  };
+  const changeDescriptorWithIndex = getChangeDescriptorWithIndex(discovery);
   const unvaultKey = keyExpressionBIP32({
     masterNode,
     originPath: "/0'",
