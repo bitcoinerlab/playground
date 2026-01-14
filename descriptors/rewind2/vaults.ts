@@ -231,7 +231,7 @@ const getBackupCost = (
 ) => {
   if (backupType === 'INSCRIPTION')
     return Math.ceil(
-      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + WPKH_DUST_THRESHOLD //FIXME: WPKH_DUST_THRESHOLD cannot be assuned, since the wallet may be of other type...
+      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + WPKH_DUST_THRESHOLD //FIXME: WPKH_DUST_THRESHOLD cannot be assuned, since the wallet may be of other type...this one must match TAGrfgkjnfdgfgfdg
     );
   if (backupType === 'OP_RETURN_TRUC' || backupType === 'OP_RETURN_V2')
     return Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate);
@@ -295,6 +295,22 @@ export const getVaultContext = ({
     feeRate
   });
 
+  //TODO: here alter the targets if a new param called "matchMinRelayFeeRate: boolean is passed.
+  //if true, then we want the vaultTx to pay the minimum fee possibl and the
+  //fee will be paid as CPFP in the last tx of the backup chain.
+  //so if matchMinRelayFeeRate = true and is OP_RETURN_TRUC, then fee can be
+  //zero. If matchMinRelayFeeRate (defaults to false) is false and is OP_RETURN_V2 or Inscription
+  //then pay fee rate of 0.1 (use a constant)
+  //The backupCost wil be still be the same but also return a new var
+  //called backupOutputValue that will receive more sats (tge one subtracted
+  //to the vaultTx), since these sapts will fund the CPFP at the end
+  //createVault also will receive a matchMinRelayFeeRate var (defaults to false)
+  //that will be assed to this getVaultContext.
+  //Then, in createInscriptionBackup more work has to be done.
+  //It must also receive matchMinRelayFeeRate. If true, then we want the commit
+  //tx to have feeRate of 0.1 sats/vbyte, so adjust the output value of the
+  //commit tx.  I guess this one will need to be adjusted there:   const revealFee = Math.ceil( Math.max(...INSCRIPTION_REVEAL_BACKUP_TX_VBYTES) * feeRate);
+
   return {
     randomKey,
     randomPubKey,
@@ -353,7 +369,6 @@ export const createVault = ({
   if (typeof selected === 'string') return 'COINSELECT_ERROR: ' + selected;
   const vaultUtxosData = selected.utxosData;
   const vaultTargets = selected.targets;
-  const vaultMiningFee = selected.fee;
   if (vaultTargets[0]?.output !== vaultOutput)
     throw new Error("coinselect first output should be the vault's output");
   if (vaultTargets[1]?.output !== backupOutput)
@@ -398,8 +413,6 @@ export const createVault = ({
   const vaultVsize = txVault.virtualSize();
   if (vaultVsize > selected.vsize)
     throw new Error('vsize larger than coinselected estimated one');
-  const feeRateVault = vaultMiningFee / txVault.virtualSize();
-  if (feeRateVault < 1) return 'UNKNOWN_ERROR';
 
   //////////////////////
   // Trigger (135 vB):
@@ -651,11 +664,11 @@ export const createInscriptionBackup = ({
   // NOTE: wallet balance will remain at least WPKH_DUST_THRESHOLD
   // (294 sats) because the reveal tx creates a dust change output that is
   // intentionally kept spendable.
-  const revealOutputValue = WPKH_DUST_THRESHOLD; //FIXME: WPKH can be assumed always?
+  const revealOutputValue = WPKH_DUST_THRESHOLD; //FIXME: WPKH can be assumed always? this one must match TAGrfgkjnfdgfgfdg
   const revealFee = Math.ceil(
     Math.max(...INSCRIPTION_REVEAL_BACKUP_TX_VBYTES) * feeRate
   );
-  const targetValue = revealOutputValue + revealFee;
+  const commitOutputValue = revealOutputValue + revealFee;
 
   const psbtCommit = new Psbt({ network });
   const commitInputFinalizer = backupOutput.updatePsbtAsInput({
@@ -665,13 +678,13 @@ export const createInscriptionBackup = ({
   });
   backupInscription.updatePsbtAsOutput({
     psbt: psbtCommit,
-    value: targetValue
+    value: commitOutputValue
   });
   signers.signBIP32({ psbt: psbtCommit, masterNode });
   commitInputFinalizer({ psbt: psbtCommit });
 
   const commitTx = psbtCommit.extractTransaction();
-  const commitFee = backupInputValue - targetValue;
+  const commitFee = backupInputValue - commitOutputValue;
   const commitVsize = commitTx.virtualSize();
   const minimumCommitFee = Math.ceil(commitVsize * feeRate);
   if (commitFee < minimumCommitFee)
