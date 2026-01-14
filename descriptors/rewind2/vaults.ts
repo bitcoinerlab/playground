@@ -223,7 +223,65 @@ const coinselectUtxosData = ({
   };
 };
 
-export const estimateVaultTx = ({
+const getBackupCost = (
+  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION',
+  feeRate: number
+) => {
+  if (backupType === 'INSCRIPTION')
+    return Math.ceil(
+      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + WPKH_DUST_THRESHOLD //FIXME: WPKH_DUST_THRESHOLD cannot be assuned, since the wallet may be of other type...
+    );
+  if (backupType === 'OP_RETURN_TRUC' || backupType === 'OP_RETURN_V2')
+    return Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate);
+  throw new Error('backupCost unset');
+};
+
+const getVaultContext = ({
+  masterNode,
+  randomMasterNode,
+  changeDescriptorWithIndex,
+  vaultIndex,
+  backupType,
+  feeRate,
+  network
+}: {
+  masterNode: BIP32Interface;
+  randomMasterNode: BIP32Interface;
+  changeDescriptorWithIndex: { descriptor: string; index: number };
+  vaultIndex: number;
+  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
+  feeRate: number;
+  network: Network;
+}) => {
+  const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`; //FIXME: can 84 be assumed here?
+  const randomKeyPath = `/0/0`;
+  const randomKey = keyExpressionBIP32({
+    masterNode: randomMasterNode,
+    originPath: randomOriginPath,
+    keyPath: randomKeyPath
+  });
+  const randomPubKey = randomMasterNode.derivePath(
+    `m${randomOriginPath}${randomKeyPath}`
+  ).publicKey;
+  const vaultOutput = new Output({ descriptor: `wpkh(${randomKey})`, network });
+  const backupOutput = new Output({
+    descriptor: getBackupDescriptor({ masterNode, network, index: vaultIndex }),
+    network
+  });
+  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
+  const backupCost = getBackupCost(backupType, feeRate);
+
+  return {
+    randomKey,
+    randomPubKey,
+    vaultOutput,
+    backupOutput,
+    changeOutput,
+    backupCost
+  };
+};
+
+export const coinselectVault = ({
   vaultedAmount,
   feeRate,
   utxosData,
@@ -244,31 +302,17 @@ export const estimateVaultTx = ({
   backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
   network: Network;
 }) => {
-  const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`;
-  const randomKeyPath = `/0/0`;
-  const randomKey = keyExpressionBIP32({
-    masterNode: randomMasterNode,
-    originPath: randomOriginPath,
-    keyPath: randomKeyPath
-  });
-  const vaultOutput = new Output({ descriptor: `wpkh(${randomKey})`, network });
-  const backupOutput = new Output({
-    descriptor: getBackupDescriptor({ masterNode, network, index: vaultIndex }),
-    network
-  });
-  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
-
-  let backupCost;
-  if (backupType === 'INSCRIPTION')
-    backupCost = Math.ceil(
-      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + WPKH_DUST_THRESHOLD //FIXME: WPKH_DUST_THRESHOLD cannot be assuned, since the wallet may be of other type...
-    );
-  else if (backupType === 'OP_RETURN_TRUC' || backupType == 'OP_RETURN_V2')
-    backupCost = Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate);
-
-  if (backupCost === undefined) throw new Error('backupCost unset');
-  // Run the coinselector
-  const selected = coinselectUtxosData({
+  const { vaultOutput, backupOutput, changeOutput, backupCost } =
+    getVaultContext({
+      masterNode,
+      randomMasterNode,
+      changeDescriptorWithIndex,
+      vaultIndex,
+      backupType,
+      feeRate,
+      network
+    });
+  return coinselectUtxosData({
     utxosData,
     vaultOutput,
     vaultedAmount,
@@ -277,15 +321,6 @@ export const estimateVaultTx = ({
     changeOutput,
     feeRate
   });
-  if (!selected) return;
-
-  return {
-    fee: selected.fee,
-    vsize: selected.vsize,
-    vaultedAmount: selected.vaultedAmount,
-    targets: selected.targets,
-    utxosData: selected.utxosData
-  };
 };
 
 export const createVault = ({
@@ -314,32 +349,22 @@ export const createVault = ({
   backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
   network: Network;
 }) => {
-  const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`;
-  const randomKeyPath = `/0/0`;
-  const randomKey = keyExpressionBIP32({
-    masterNode: randomMasterNode,
-    originPath: randomOriginPath,
-    keyPath: randomKeyPath
-  });
-  const randomPubKey = randomMasterNode.derivePath(
-    `m${randomOriginPath}${randomKeyPath}`
-  ).publicKey;
-  const vaultOutput = new Output({ descriptor: `wpkh(${randomKey})`, network });
-  const backupOutput = new Output({
-    descriptor: getBackupDescriptor({ masterNode, network, index: vaultIndex }),
+  const {
+    randomKey,
+    randomPubKey,
+    vaultOutput,
+    backupOutput,
+    changeOutput,
+    backupCost
+  } = getVaultContext({
+    masterNode,
+    randomMasterNode,
+    changeDescriptorWithIndex,
+    vaultIndex,
+    backupType,
+    feeRate,
     network
   });
-  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
-
-  let backupCost;
-  if (backupType === 'INSCRIPTION')
-    backupCost = Math.ceil(
-      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + WPKH_DUST_THRESHOLD //FIXME: WPKH_DUST_THRESHOLD cannot be assuned, since the wallet may be of other type...
-    );
-  else if (backupType === 'OP_RETURN_TRUC' || backupType == 'OP_RETURN_V2')
-    backupCost = Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate);
-
-  if (backupCost === undefined) throw new Error('backupCost unset');
   // Run the coinselector
   const selected = coinselectUtxosData({
     utxosData,
@@ -647,7 +672,7 @@ export const createInscriptionBackup = ({
   if (!backupOut) throw new Error('Backup output not found in vault tx');
   const backupInputValue = backupOut.value;
 
-  const revealOutputValue = WPKH_DUST_THRESHOLD;
+  const revealOutputValue = WPKH_DUST_THRESHOLD; //FIXME: WPKH can be assumed always?
   const revealFee = Math.ceil(
     Math.max(...INSCRIPTION_REVEAL_BACKUP_TX_VBYTES) * feeRate
   );

@@ -38,6 +38,7 @@ import {
 } from '@bitcoinerlab/discovery';
 
 //FIXME: this still needs a mechanism to keep some margin for paying anchors
+const BACKUP_TYPE = 'INSCRIPTION';
 const FEE_RATE = 2.0;
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
@@ -95,7 +96,7 @@ import {
   INSCRIPTION_BACKUP_TX_VBYTES,
   OP_RETURN_BACKUP_TX_VBYTES,
   WPKH_DUST_THRESHOLD,
-  estimateVaultTx,
+  coinselectVault,
   createInscriptionBackup,
   createOpReturnBackup,
   createVault,
@@ -160,19 +161,18 @@ Every reload reuses the same mnemonic for convenience.`);
     txStatus: TxStatus.ALL
   }).length;
 
-  const backupType = 'INSCRIPTION';
   const backupCost =
-    backupType === 'INSCRIPTION'
+    BACKUP_TYPE === 'INSCRIPTION'
       ? Math.ceil(
           Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * FEE_RATE +
-            WPKH_DUST_THRESHOLD
+            WPKH_DUST_THRESHOLD //FIXME: what if not using WPKH !?!?!
         )
       : Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * FEE_RATE);
 
   const minVaultableAmount = WPKH_DUST_THRESHOLD; //FIXME: what if not using WPKH !?!?!
 
   let utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
-  let vaultMaxFundsTxEstimate = estimateVaultTx({
+  let coinselectedVaultMaxFunds = coinselectVault({
     vaultedAmount: 'MAX_FUNDS',
     feeRate: FEE_RATE,
     utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
@@ -180,11 +180,11 @@ Every reload reuses the same mnemonic for convenience.`);
     randomMasterNode,
     changeDescriptorWithIndex: getChangeDescriptorWithIndex(discovery),
     vaultIndex: 0, //Dummmy value is ok just to grab vsize
-    backupType,
+    backupType: BACKUP_TYPE,
     network
   });
-  let maxVaultableAmount = vaultMaxFundsTxEstimate
-    ? utxosAndBalance.balance - vaultMaxFundsTxEstimate.fee - backupCost
+  let maxVaultableAmount = coinselectedVaultMaxFunds
+    ? utxosAndBalance.balance - coinselectedVaultMaxFunds.fee - backupCost
     : 0;
 
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
@@ -236,7 +236,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   //re-compute values after coinselect:
   utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
-  vaultMaxFundsTxEstimate = estimateVaultTx({
+  coinselectedVaultMaxFunds = coinselectVault({
     vaultedAmount: 'MAX_FUNDS',
     feeRate: FEE_RATE,
     utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
@@ -244,11 +244,11 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     randomMasterNode,
     changeDescriptorWithIndex: getChangeDescriptorWithIndex(discovery),
     vaultIndex: 0, //Dummmy value is ok just to grab vsize
-    backupType,
+    backupType: BACKUP_TYPE,
     network
   });
-  maxVaultableAmount = vaultMaxFundsTxEstimate
-    ? utxosAndBalance.balance - vaultMaxFundsTxEstimate.fee - backupCost
+  maxVaultableAmount = coinselectedVaultMaxFunds
+    ? utxosAndBalance.balance - coinselectedVaultMaxFunds.fee - backupCost
     : 0;
 
   if (maxVaultableAmount < minVaultableAmount)
@@ -269,6 +269,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     gapLimit: VAULT_GAP_LIMIT
   });
   const vaultIndex = discovery.getNextIndex({ descriptor: backupDescriptor });
+  Log(`🔍 Number of Vaults found: ${vaultIndex}`);
 
   const coldAddress = new Output({
     descriptor: wpkhBIP32({
@@ -296,7 +297,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     coldAddress,
     changeDescriptorWithIndex,
     vaultIndex,
-    backupType,
+    backupType: BACKUP_TYPE,
     network
   });
   if (typeof vault === 'string') throw new Error(vault);
@@ -306,7 +307,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   const vaultTx = psbtVault.extractTransaction();
 
   let psbtBackup;
-  if (backupType === 'INSCRIPTION') {
+  if (BACKUP_TYPE === 'INSCRIPTION') {
     const inscriptionPsbts = createInscriptionBackup({
       vaultIndex,
       feeRate: FEE_RATE,
@@ -337,7 +338,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       psbtVault,
       vaultIndex,
       masterNode,
-      backupType,
+      backupType: BACKUP_TYPE,
       network
     });
 
