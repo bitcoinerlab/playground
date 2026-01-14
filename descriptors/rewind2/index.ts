@@ -97,8 +97,6 @@ const { Output, BIP32 } = DescriptorsFactory(secp256k1);
 import type { Output } from 'bitcoinjs-lib/src/transaction';
 import { isWeb, JSONf, Log } from './utils';
 import {
-  INSCRIPTION_BACKUP_TX_VBYTES,
-  OP_RETURN_BACKUP_TX_VBYTES,
   WPKH_DUST_THRESHOLD,
   getVaultContext,
   createInscriptionBackup,
@@ -165,18 +163,10 @@ Every reload reuses the same mnemonic for convenience.`);
     txStatus: TxStatus.ALL
   }).length;
 
-  const backupCost =
-    BACKUP_TYPE === 'INSCRIPTION'
-      ? Math.ceil(Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * FEE_RATE) +
-      WPKH_DUST_THRESHOLD
-      : Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * FEE_RATE);
-
-  Log(`The backup will cost: ${backupCost}`);
-
   const minVaultableAmount = WPKH_DUST_THRESHOLD; //FIXME: what if not using WPKH !?!?!
 
   let utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
-  let { selected: coinselectedVaultMaxFunds } = getVaultContext({
+  let vaultMaxFundsContext = getVaultContext({
     vaultedAmount: 'MAX_FUNDS',
     feeRate: FEE_RATE,
     utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
@@ -187,15 +177,15 @@ Every reload reuses the same mnemonic for convenience.`);
     backupType: BACKUP_TYPE,
     network
   });
+  let coinselectedVaultMaxFunds = vaultMaxFundsContext.selected;
+
   let maxVaultableAmount;
   if (typeof coinselectedVaultMaxFunds === 'string') {
     Log(`The coinselector failed: ${coinselectedVaultMaxFunds}`);
     maxVaultableAmount = 0;
-  } else {
-    maxVaultableAmount =
-      utxosAndBalance.balance - coinselectedVaultMaxFunds.fee - backupCost;
-  }
+  } else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
 
+  Log(`The backup will cost: ${vaultMaxFundsContext.backupCost}`);
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   Log(`🔍 Wallet UTXOs: ${utxosAndBalance.utxos.length}`);
   Log(`🔍 Wallet max vaultable amount: ${maxVaultableAmount}`);
@@ -247,7 +237,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   //re-compute values after coinselect:
   utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
-  ({ selected: coinselectedVaultMaxFunds } = getVaultContext({
+  vaultMaxFundsContext = getVaultContext({
     vaultedAmount: 'MAX_FUNDS',
     feeRate: FEE_RATE,
     utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
@@ -257,14 +247,12 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     vaultIndex: 0, //Dummmy value is ok just to grab vsize
     backupType: BACKUP_TYPE,
     network
-  }));
+  });
+  coinselectedVaultMaxFunds = vaultMaxFundsContext.selected;
   if (typeof coinselectedVaultMaxFunds === 'string') {
     Log(`The coinselector failed: ${coinselectedVaultMaxFunds}`);
     maxVaultableAmount = 0;
-  } else {
-    maxVaultableAmount =
-      utxosAndBalance.balance - coinselectedVaultMaxFunds.fee - backupCost;
-  }
+  } else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
 
   if (maxVaultableAmount < minVaultableAmount)
     throw new Error(
@@ -323,10 +311,11 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const vaultTx = psbtVault.extractTransaction();
   Log(
-    `💸 Vault tx fee: ${vault.vaultUtxosData.reduce(
-      (sum, utxo) => sum + (utxo.tx.outs[utxo.vout]?.value ?? 0),
-      0
-    ) - vaultTx.outs.reduce((sum, out) => sum + out.value, 0)
+    `💸 Vault tx fee: ${
+      vault.vaultUtxosData.reduce(
+        (sum, utxo) => sum + (utxo.tx.outs[utxo.vout]?.value ?? 0),
+        0
+      ) - vaultTx.outs.reduce((sum, out) => sum + out.value, 0)
     }`
   );
 

@@ -688,7 +688,6 @@ export const createInscriptionBackup = ({
     psbt: psbtReveal,
     value: revealOutputValue
   });
-  //TODO: here this will create a new utxo. also we can remove the original utxos
   signers.signBIP32({ psbt: psbtReveal, masterNode });
   revealInputFinalizer({ psbt: psbtReveal });
 
