@@ -153,14 +153,15 @@ const coinselectUtxosData = ({
   feeRate: number;
 }) => {
   const utxos = getOutputsWithValue(utxosData);
-  if (!utxos.length) return;
+  if (!utxos.length) return 'NO_UTXOS';
   if (
     typeof vaultedAmount === 'number' &&
     vaultedAmount <= dustThreshold(vaultOutput)
   )
-    return;
+    return `VAULT OUT BELOW DUST: ${vaultedAmount} <= ${dustThreshold(vaultOutput)}`;
   if (backupOutput && backupCost !== undefined) {
-    if (backupCost <= dustThreshold(backupOutput)) return;
+    if (backupCost <= dustThreshold(backupOutput))
+      return `BACKUP OUT BELOW DUST: ${backupCost} <= ${dustThreshold(backupOutput)}`;
   } else if (backupOutput || backupCost !== undefined) {
     throw new Error('backupOutput and backupCost must be provided together');
   }
@@ -177,12 +178,13 @@ const coinselectUtxosData = ({
       remainder: vaultOutput,
       feeRate
     });
-    if (!coinselected) return;
+    if (!coinselected) return 'MAX_FUNDS COINSELECTOR FAILED';
     const vaultTarget = coinselected.targets.find(
       target => target.output === vaultOutput
     );
-    if (!vaultTarget) return;
-    if (vaultTarget.value <= dustThreshold(vaultOutput)) return;
+    if (!vaultTarget) throw new Error('Could not find vaultOutput');
+    if (vaultTarget.value <= dustThreshold(vaultOutput))
+      return `VAULT TARGET OUT BELOW DUST: ${vaultTarget.value} <= ${dustThreshold(vaultOutput)}`;
     // maxFunds returns targets with the remainder (vault output) last, while createVault expects the vault output first and backup second
     targets = [
       { output: vaultOutput, value: vaultTarget.value },
@@ -202,7 +204,7 @@ const coinselectUtxosData = ({
       remainder: changeOutput,
       feeRate
     });
-    if (!coinselected) return;
+    if (!coinselected) return 'REGULAR COINSELECTOR FAILED';
     targets = coinselected.targets;
   }
   const selectedUtxosData =
@@ -375,7 +377,7 @@ export const createVault = ({
     changeOutput,
     feeRate
   });
-  if (!selected) return 'COINSELECT_ERROR';
+  if (typeof selected === 'string') return 'COINSELECT_ERROR: ' + selected;
   const vaultUtxosData = selected.utxosData;
   const vaultTargets = selected.targets;
   const vaultMiningFee = selected.fee;
@@ -516,6 +518,7 @@ export const createVault = ({
     psbtTrigger,
     psbtPanic,
     backupCost,
+    vaultUtxosData,
     randomMasterNode
   };
 };
@@ -581,7 +584,7 @@ export const createOpReturnBackup = ({
   return psbtBackup;
 };
 
-// Reveal tx vsize derivation (1 P2TR inscription input → 1 P2WPKH change output).
+// Reveal tx vsize derivation (1 P2TR inscription input → 1 P2WPKH output).
 // 1) Trigger raw size = 217–219 bytes; panic raw size = 269–271 bytes.
 // 2) Entry = 1 (ver) + 1 (len) + trigger + 1 (len) + panic = 489–493 bytes.
 // 3) Content = "REW"(3) + entry = 492–496 bytes.
@@ -672,6 +675,9 @@ export const createInscriptionBackup = ({
   if (!backupOut) throw new Error('Backup output not found in vault tx');
   const backupInputValue = backupOut.value;
 
+  // NOTE: wallet balance will remain at least WPKH_DUST_THRESHOLD
+  // (294 sats) because the reveal tx creates a dust change output that is
+  // intentionally kept spendable.
   const revealOutputValue = WPKH_DUST_THRESHOLD; //FIXME: WPKH can be assumed always?
   const revealFee = Math.ceil(
     Math.max(...INSCRIPTION_REVEAL_BACKUP_TX_VBYTES) * feeRate

@@ -163,11 +163,11 @@ Every reload reuses the same mnemonic for convenience.`);
 
   const backupCost =
     BACKUP_TYPE === 'INSCRIPTION'
-      ? Math.ceil(
-          Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * FEE_RATE +
-            WPKH_DUST_THRESHOLD //FIXME: what if not using WPKH !?!?!
-        )
+      ? Math.ceil(Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * FEE_RATE) +
+        WPKH_DUST_THRESHOLD
       : Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * FEE_RATE);
+
+  Log(`The backup will cost: ${backupCost}`);
 
   const minVaultableAmount = WPKH_DUST_THRESHOLD; //FIXME: what if not using WPKH !?!?!
 
@@ -183,12 +183,18 @@ Every reload reuses the same mnemonic for convenience.`);
     backupType: BACKUP_TYPE,
     network
   });
-  let maxVaultableAmount = coinselectedVaultMaxFunds
-    ? utxosAndBalance.balance - coinselectedVaultMaxFunds.fee - backupCost
-    : 0;
+  let maxVaultableAmount;
+  if (typeof coinselectedVaultMaxFunds === 'string') {
+    Log(`The coinselector failed: ${coinselectedVaultMaxFunds}`);
+    maxVaultableAmount = 0;
+  } else {
+    maxVaultableAmount =
+      utxosAndBalance.balance - coinselectedVaultMaxFunds.fee - backupCost;
+  }
 
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   Log(`🔍 Wallet UTXOs: ${utxosAndBalance.utxos.length}`);
+  Log(`🔍 Wallet max vaultable amount: ${maxVaultableAmount}`);
 
   // Trigger tx pays zero fees, so unvaulted amount equals vaulted amount.
   if (maxVaultableAmount < minVaultableAmount) {
@@ -248,9 +254,13 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     backupType: BACKUP_TYPE,
     network
   });
-  maxVaultableAmount = coinselectedVaultMaxFunds
-    ? utxosAndBalance.balance - coinselectedVaultMaxFunds.fee - backupCost
-    : 0;
+  if (typeof coinselectedVaultMaxFunds === 'string') {
+    Log(`The coinselector failed: ${coinselectedVaultMaxFunds}`);
+    maxVaultableAmount = 0;
+  } else {
+    maxVaultableAmount =
+      utxosAndBalance.balance - coinselectedVaultMaxFunds.fee - backupCost;
+  }
 
   if (maxVaultableAmount < minVaultableAmount)
     throw new Error(
@@ -260,6 +270,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);
   Log(`🔍 Updated wallet balance: ${utxosAndBalance.balance}`);
   Log(`🔍 Updated wallet UTXOs: ${utxosAndBalance.utxos.length}`);
+  Log(`🔍 Updated wallet max vaultable amount: ${maxVaultableAmount}`);
 
   const backupDescriptor = getBackupDescriptor({
     masterNode,
@@ -307,6 +318,14 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   const { psbtVault, psbtTrigger, psbtPanic } = vault;
 
   const vaultTx = psbtVault.extractTransaction();
+  Log(
+    `💸 Vault tx fee: ${
+      vault.vaultUtxosData.reduce(
+        (sum, utxo) => sum + (utxo.tx.outs[utxo.vout]?.value ?? 0),
+        0
+      ) - vaultTx.outs.reduce((sum, out) => sum + out.value, 0)
+    }`
+  );
 
   let psbtBackup;
   if (BACKUP_TYPE === 'INSCRIPTION') {
