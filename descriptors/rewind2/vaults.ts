@@ -309,7 +309,11 @@ export const getVaultContext = ({
   //Then, in createInscriptionBackup more work has to be done.
   //It must also receive matchMinRelayFeeRate. If true, then we want the commit
   //tx to have feeRate of 0.1 sats/vbyte, so adjust the output value of the
-  //commit tx.  I guess this one will need to be adjusted there:   const revealFee = Math.ceil( Math.max(...INSCRIPTION_REVEAL_BACKUP_TX_VBYTES) * feeRate);
+  //commit tx.  I guess this one will need to be adjusted there:
+  //const revealFee = Math.ceil( Math.max(...INSCRIPTION_REVEAL_BACKUP_TX_VBYTES) * feeRate); -- this is weak.
+  //Better het the commitOutputValue as the backupOut.value minus the fee for
+  //the commit tx that matches the min relay fee rate. Verify all what i
+  //propose is sound!
 
   return {
     randomKey,
