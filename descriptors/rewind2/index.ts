@@ -188,6 +188,7 @@ Every reload reuses the same mnemonic for convenience.`);
     : 0;
 
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
+  Log(`🔍 Wallet UTXOs: ${utxosAndBalance.utxos.length}`);
 
   // Trigger tx pays zero fees, so unvaulted amount equals vaulted amount.
   if (maxVaultableAmount < minVaultableAmount) {
@@ -258,6 +259,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);
   Log(`🔍 Updated wallet balance: ${utxosAndBalance.balance}`);
+  Log(`🔍 Updated wallet UTXOs: ${utxosAndBalance.utxos.length}`);
 
   const backupDescriptor = getBackupDescriptor({
     masterNode,
