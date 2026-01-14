@@ -135,7 +135,7 @@ const getOutputsWithValue = (utxosData: UtxosData) =>
     return { output: utxo.output, value: out.value };
   });
 
-const coinselectUtxosData = ({
+const coinselectVaultUtxosData = ({
   utxosData,
   vaultOutput,
   vaultedAmount,
@@ -211,10 +211,10 @@ const coinselectUtxosData = ({
     coinselected.utxos.length === utxosData.length
       ? utxosData
       : coinselected.utxos.map(utxo => {
-          const utxoData = utxosData[utxos.indexOf(utxo)];
-          if (!utxoData) throw new Error('Invalid utxoData');
-          return utxoData;
-        });
+        const utxoData = utxosData[utxos.indexOf(utxo)];
+        if (!utxoData) throw new Error('Invalid utxoData');
+        return utxoData;
+      });
 
   return {
     vsize: coinselected.vsize,
@@ -238,13 +238,15 @@ const getBackupCost = (
   throw new Error('backupCost unset');
 };
 
-const getVaultContext = ({
+export const getVaultContext = ({
   masterNode,
   randomMasterNode,
   changeDescriptorWithIndex,
   vaultIndex,
   backupType,
   feeRate,
+  utxosData,
+  vaultedAmount,
   network
 }: {
   masterNode: BIP32Interface;
@@ -253,6 +255,8 @@ const getVaultContext = ({
   vaultIndex: number;
   backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
   feeRate: number;
+  vaultedAmount: number | 'MAX_FUNDS';
+  utxosData: UtxosData;
   network: Network;
 }) => {
   const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`; //FIXME: can 84 be assumed here?
@@ -272,49 +276,8 @@ const getVaultContext = ({
   });
   const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
   const backupCost = getBackupCost(backupType, feeRate);
-
-  return {
-    randomKey,
-    randomPubKey,
-    vaultOutput,
-    backupOutput,
-    changeOutput,
-    backupCost
-  };
-};
-
-export const coinselectVault = ({
-  vaultedAmount,
-  feeRate,
-  utxosData,
-  masterNode,
-  randomMasterNode,
-  changeDescriptorWithIndex,
-  vaultIndex,
-  backupType,
-  network
-}: {
-  vaultedAmount: number | 'MAX_FUNDS';
-  feeRate: number;
-  utxosData: UtxosData;
-  masterNode: BIP32Interface;
-  randomMasterNode: BIP32Interface;
-  changeDescriptorWithIndex: { descriptor: string; index: number };
-  vaultIndex: number;
-  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
-  network: Network;
-}) => {
-  const { vaultOutput, backupOutput, changeOutput, backupCost } =
-    getVaultContext({
-      masterNode,
-      randomMasterNode,
-      changeDescriptorWithIndex,
-      vaultIndex,
-      backupType,
-      feeRate,
-      network
-    });
-  return coinselectUtxosData({
+  // Run the coinselector
+  const selected = coinselectVaultUtxosData({
     utxosData,
     vaultOutput,
     vaultedAmount,
@@ -323,6 +286,16 @@ export const coinselectVault = ({
     changeOutput,
     feeRate
   });
+
+  return {
+    randomKey,
+    randomPubKey,
+    vaultOutput,
+    backupOutput,
+    changeOutput,
+    backupCost,
+    selected
+  };
 };
 
 export const createVault = ({
@@ -356,7 +329,7 @@ export const createVault = ({
     randomPubKey,
     vaultOutput,
     backupOutput,
-    changeOutput,
+    selected,
     backupCost
   } = getVaultContext({
     masterNode,
@@ -365,17 +338,9 @@ export const createVault = ({
     vaultIndex,
     backupType,
     feeRate,
-    network
-  });
-  // Run the coinselector
-  const selected = coinselectUtxosData({
     utxosData,
-    vaultOutput,
     vaultedAmount,
-    backupOutput,
-    backupCost,
-    changeOutput,
-    feeRate
+    network
   });
   if (typeof selected === 'string') return 'COINSELECT_ERROR: ' + selected;
   const vaultUtxosData = selected.utxosData;

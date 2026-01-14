@@ -100,7 +100,7 @@ import {
   INSCRIPTION_BACKUP_TX_VBYTES,
   OP_RETURN_BACKUP_TX_VBYTES,
   WPKH_DUST_THRESHOLD,
-  coinselectVault,
+  getVaultContext,
   createInscriptionBackup,
   createOpReturnBackup,
   createVault,
@@ -168,7 +168,7 @@ Every reload reuses the same mnemonic for convenience.`);
   const backupCost =
     BACKUP_TYPE === 'INSCRIPTION'
       ? Math.ceil(Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * FEE_RATE) +
-        WPKH_DUST_THRESHOLD
+      WPKH_DUST_THRESHOLD
       : Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * FEE_RATE);
 
   Log(`The backup will cost: ${backupCost}`);
@@ -176,7 +176,7 @@ Every reload reuses the same mnemonic for convenience.`);
   const minVaultableAmount = WPKH_DUST_THRESHOLD; //FIXME: what if not using WPKH !?!?!
 
   let utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
-  let coinselectedVaultMaxFunds = coinselectVault({
+  let { selected: coinselectedVaultMaxFunds } = getVaultContext({
     vaultedAmount: 'MAX_FUNDS',
     feeRate: FEE_RATE,
     utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
@@ -247,7 +247,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   //re-compute values after coinselect:
   utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
-  coinselectedVaultMaxFunds = coinselectVault({
+  ({ selected: coinselectedVaultMaxFunds } = getVaultContext({
     vaultedAmount: 'MAX_FUNDS',
     feeRate: FEE_RATE,
     utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
@@ -257,7 +257,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     vaultIndex: 0, //Dummmy value is ok just to grab vsize
     backupType: BACKUP_TYPE,
     network
-  });
+  }));
   if (typeof coinselectedVaultMaxFunds === 'string') {
     Log(`The coinselector failed: ${coinselectedVaultMaxFunds}`);
     maxVaultableAmount = 0;
@@ -323,11 +323,10 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const vaultTx = psbtVault.extractTransaction();
   Log(
-    `💸 Vault tx fee: ${
-      vault.vaultUtxosData.reduce(
-        (sum, utxo) => sum + (utxo.tx.outs[utxo.vout]?.value ?? 0),
-        0
-      ) - vaultTx.outs.reduce((sum, out) => sum + out.value, 0)
+    `💸 Vault tx fee: ${vault.vaultUtxosData.reduce(
+      (sum, utxo) => sum + (utxo.tx.outs[utxo.vout]?.value ?? 0),
+      0
+    ) - vaultTx.outs.reduce((sum, out) => sum + out.value, 0)
     }`
   );
 
