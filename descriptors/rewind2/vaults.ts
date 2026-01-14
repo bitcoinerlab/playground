@@ -211,10 +211,10 @@ const coinselectVaultUtxosData = ({
     coinselected.utxos.length === utxosData.length
       ? utxosData
       : coinselected.utxos.map(utxo => {
-        const utxoData = utxosData[utxos.indexOf(utxo)];
-        if (!utxoData) throw new Error('Invalid utxoData');
-        return utxoData;
-      });
+          const utxoData = utxosData[utxos.indexOf(utxo)];
+          if (!utxoData) throw new Error('Invalid utxoData');
+          return utxoData;
+        });
 
   return {
     vsize: coinselected.vsize,
@@ -238,6 +238,14 @@ const getBackupCost = (
   throw new Error('backupCost unset');
 };
 
+/**
+ * Builds deterministic vault outputs and runs coin selection for them.
+ *
+ * Uses a randomly derived vault output, a deterministic backup output derived
+ * from the vault index, and a wallet change output to compute the coinselector
+ * for the requested vaulted amount. The backup cost is derived from the
+ * backup type and fee rate.
+ */
 export const getVaultContext = ({
   masterNode,
   randomMasterNode,
