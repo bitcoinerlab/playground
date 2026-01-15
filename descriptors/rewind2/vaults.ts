@@ -2,7 +2,6 @@ const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
 const LOCK_BLOCKS = 2;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 const VAULT_PURPOSE = 1073;
-export const WPKH_DUST_THRESHOLD = 294;
 const MIN_RELAY_FEE_RATE = 0.1;
 
 const VAULT_OUTPUT_INDEX = 0;
@@ -346,11 +345,13 @@ const coinselectVaultUtxosData = ({
 
 const getBackupCost = (
   backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION',
-  feeRate: number
+  feeRate: number,
+  dustOutput: OutputInstance
 ) => {
   if (backupType === 'INSCRIPTION')
     return Math.ceil(
-      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate + WPKH_DUST_THRESHOLD //FIXME: WPKH_DUST_THRESHOLD cannot be assuned, since the wallet may be of other type...this one must match TAGrfgkjnfdgfgfdg
+      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate +
+        dustThreshold(dustOutput)
     );
   if (backupType === 'OP_RETURN_TRUC' || backupType === 'OP_RETURN_V2')
     return Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate);
@@ -404,7 +405,7 @@ export const getVaultContext = ({
     network
   });
   const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
-  const backupCost = getBackupCost(backupType, feeRate);
+  const backupCost = getBackupCost(backupType, feeRate, changeOutput);
   // Run the coinselector
   const selected = coinselectVaultUtxosData({
     utxosData,
@@ -735,11 +736,12 @@ export const createInscriptionBackup = ({
   const backupOut = vaultTx.outs[BACKOUT_OUTPUT_INDEX];
   if (!backupOut) throw new Error('Backup output not found in vault tx');
   const backupOutputValue = backupOut.value;
+  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
 
-  // NOTE: wallet balance will remain at least WPKH_DUST_THRESHOLD
-  // (294 sats) because the reveal tx creates a dust change output that is
+  // NOTE: wallet balance will remain at least the dust threshold for the
+  // change output, because the reveal tx creates a dust change output that is
   // intentionally kept spendable.
-  const revealOutputValue = WPKH_DUST_THRESHOLD; //FIXME: WPKH can be assumed always? this one must match TAGrfgkjnfdgfgfdg
+  const revealOutputValue = dustThreshold(changeOutput);
   const commitFeeRate = shiftFeesToBackupEnd ? MIN_RELAY_FEE_RATE : feeRate;
   const commitFeeTarget = Math.ceil(
     Math.max(...INSCRIPTION_COMMIT_BACKUP_TX_VBYTES) * commitFeeRate
@@ -770,7 +772,6 @@ export const createInscriptionBackup = ({
     txHex: commitTx.toHex(),
     vout: 0
   });
-  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
   changeOutput.updatePsbtAsOutput({
     psbt: psbtReveal,
     value: revealOutputValue

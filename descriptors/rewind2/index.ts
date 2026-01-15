@@ -37,9 +37,10 @@ import {
   TxStatus,
   type DiscoveryInstance
 } from '@bitcoinerlab/discovery';
+import { dustThreshold } from '@bitcoinerlab/coinselect';
 
 //FIXME: this still needs a mechanism to keep some margin for paying anchors
-const BACKUP_TYPE = 'OP_RETURN_TRUC';
+const BACKUP_TYPE = 'INSCRIPTION';
 const FEE_RATE = 2.0;
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
@@ -95,7 +96,6 @@ const { Output, BIP32 } = DescriptorsFactory(secp256k1);
 import type { Output } from 'bitcoinjs-lib/src/transaction';
 import { isWeb, JSONf, Log } from './utils';
 import {
-  WPKH_DUST_THRESHOLD,
   getVaultContext,
   createInscriptionBackup,
   createOpReturnBackup,
@@ -161,8 +161,6 @@ Every reload reuses the same mnemonic for convenience.`);
     txStatus: TxStatus.ALL
   }).length;
 
-  const minVaultableAmount = WPKH_DUST_THRESHOLD; //FIXME: what if not using WPKH !?!?!
-
   let utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
   let vaultMaxFundsContext = getVaultContext({
     vaultedAmount: 'MAX_FUNDS',
@@ -176,6 +174,8 @@ Every reload reuses the same mnemonic for convenience.`);
     shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
     network
   });
+  const minVaultableAmount = dustThreshold(vaultMaxFundsContext.vaultOutput);
+
   let coinselectedVaultMaxFunds = vaultMaxFundsContext.selected;
 
   let maxVaultableAmount;
