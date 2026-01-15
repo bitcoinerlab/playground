@@ -43,7 +43,14 @@ const PANIC_TX_SERIALIZED_BYTES = [271, 272, 273, 274];
 
 const VAULT_ENTRY_BYTES = uniqueSorted(
   TRIGGER_TX_SERIALIZED_BYTES.flatMap(triggerBytes =>
-    PANIC_TX_SERIALIZED_BYTES.map(panicBytes => 3 + triggerBytes + panicBytes)
+    PANIC_TX_SERIALIZED_BYTES.map(
+      panicBytes =>
+        1 +
+        encodingLength(triggerBytes) +
+        triggerBytes +
+        encodingLength(panicBytes) +
+        panicBytes
+    )
   )
 );
 const VAULT_CONTENT_BYTES = VAULT_ENTRY_BYTES.map(bytes => bytes + 3);
@@ -54,12 +61,13 @@ const P2WPKH_WITNESS_BYTES = [108, 109, 110, 111];
  *
  * - Trigger tx size: 215–218 bytes (107 stripped + 108–111 witness).
  * - Panic tx size: 271–274 bytes (95 stripped + 176–179 witness).
- * - Serialized entry size: 1 (version) + 1 (trigger len) + trigger + 1 (panic len) + panic = 489–495 bytes.
- * - OP_RETURN payload: 3 ("REW") + entry = 492–498 bytes → OP_PUSHDATA2.
- * - Script size: 1 (OP_RETURN) + 1 (OP_PUSHDATA2) + 2 (len) + payload = 496–502 bytes.
- * - Stripped tx size: 4 + 1 + 41 + 1 + output(8 + 1 + script) + 4 = 556–562 bytes.
+ * - Serialized entry size: 1 (version) + varint(trigger len) + trigger + varint(panic len) + panic = 491–497 bytes.
+ *   - trigger len is 1 byte (215–218), panic len is 3 bytes (271–274).
+ * - OP_RETURN payload: 3 ("REW") + entry = 494–500 bytes → OP_PUSHDATA2.
+ * - Script size: 1 (OP_RETURN) + 1 (OP_PUSHDATA2) + 2 (len) + payload = 498–504 bytes.
+ * - Stripped tx size: 4 + 1 + 41 + 1 + output(8 + 1 + script) + 4 = 558–564 bytes.
  * - Witness size: 108–111 bytes (marker/flag + count + sig(70–73) + pubkey).
- * - vbytes = ceil((stripped*4 + witness) / 4) = 583–590 vB.
+ * - vbytes = ceil((stripped*4 + witness) / 4) = 585–592 vB.
  */
 const OP_RETURN_SCRIPT_BYTES = VAULT_CONTENT_BYTES.map(bytes => bytes + 4);
 const OP_RETURN_OUTPUT_BYTES = OP_RETURN_SCRIPT_BYTES.map(bytes => bytes + 9);
@@ -76,13 +84,13 @@ const OP_RETURN_BACKUP_TX_VBYTES = uniqueSorted(
 
 // Reveal tx vsize derivation (1 P2TR inscription input → 1 P2WPKH output).
 // 1) Trigger serialized size = 215–218 bytes; panic serialized size = 271–274 bytes.
-// 2) Entry = 1 (ver) + 1 (len) + trigger + 1 (len) + panic = 489–495 bytes.
-// 3) Content = "REW"(3) + entry = 492–498 bytes.
-// 4) Tapscript length = 103 (overhead) + content = 595–601 bytes.
+// 2) Entry = 1 (ver) + varint(trigger len) + trigger + varint(panic len) + panic = 491–497 bytes.
+// 3) Content = "REW"(3) + entry = 494–500 bytes.
+// 4) Tapscript length = 103 (overhead) + content = 597–603 bytes.
 // 5) Witness size (marker/flag + stack count + sig + tapscript + control block)
-//    = 2 + 1 + 66 + (3 + tapscript) + 34 = 701–707 bytes.
+//    = 2 + 1 + 66 + (3 + tapscript) + 34 = 703–709 bytes.
 // 6) Stripped size = 82 bytes → 328 wu.
-// 7) Weight = 1029–1035 wu → vsize = 258–259 vB.
+// 7) Weight = 1031–1037 wu → vsize = 258–260 vB.
 const INSCRIPTION_TAPSCRIPT_BYTES = VAULT_CONTENT_BYTES.map(
   bytes => bytes + 103
 );
