@@ -8,6 +8,121 @@ const MIN_RELAY_FEE_RATE = 0.1;
 const VAULT_OUTPUT_INDEX = 0;
 const BACKOUT_OUTPUT_INDEX = 1;
 
+const uniqueSorted = (values: number[]) =>
+  values
+    .filter((value, index, array) => array.indexOf(value) === index)
+    .sort((a, b) => a - b);
+
+//////////////////////
+// Trigger (134–135 vB):
+// 1 P2WPKH input, 2 outputs (P2A + P2WSH).
+// - Stripped size: 107 bytes
+//   - Version (4) + vin (1) + input (41) + vout (1) + outputs (56) + locktime (4)
+//   - Outputs = P2A (13) + P2WSH (43)
+// - Witness size: 108–111 bytes
+//   - Marker/flag 2
+//   - Stack items: sig (70–73 bytes) + 1 len + pubkey (33 bytes) + 1 len + count (1)
+// - Weight: 536–539 wu → vsize = 134–135 vB
+//////////////////////
+const TRIGGER_TX_VBYTES = [134, 135];
+const TRIGGER_TX_SERIALIZED_BYTES = [215, 216, 217, 218];
+
+//////////////////////
+// Panic (139–140 vB):
+// 1 P2WSH input, 2 outputs (P2A + addr).
+// - Stripped size: 95 bytes
+//  - Version (4) + vin (1) + input (41) + vout (1) + outputs (44) + locktime (4)
+//  - Outputs = P2A (13) + P2WPKH (31)
+// - Witness size: 176–179 bytes
+//  - Marker/flag 2
+//  - Stack items: sig (70–73 bytes) + 1 len + pubkey (33 bytes) + 1 len + selector (1 byte) + 1 len + witnessScript (65 bytes) + 1 len + count (1)
+// - Weight: 556–559 wu → vsize = 139–140 vB
+//////////////////////
+const PANIC_TX_VBYTES = [139, 140];
+const PANIC_TX_SERIALIZED_BYTES = [271, 272, 273, 274];
+
+const VAULT_ENTRY_BYTES = uniqueSorted(
+  TRIGGER_TX_SERIALIZED_BYTES.flatMap(triggerBytes =>
+    PANIC_TX_SERIALIZED_BYTES.map(panicBytes => 3 + triggerBytes + panicBytes)
+  )
+);
+const VAULT_CONTENT_BYTES = VAULT_ENTRY_BYTES.map(bytes => bytes + 3);
+const P2WPKH_WITNESS_BYTES = [108, 109, 110, 111];
+
+/**
+ * Estimated vbytes for the backup tx (1 P2WPKH input, 1 OP_RETURN output).
+ *
+ * - Trigger tx size: 215–218 bytes (107 stripped + 108–111 witness).
+ * - Panic tx size: 271–274 bytes (95 stripped + 176–179 witness).
+ * - Serialized entry size: 1 (version) + 1 (trigger len) + trigger + 1 (panic len) + panic = 489–495 bytes.
+ * - OP_RETURN payload: 3 ("REW") + entry = 492–498 bytes → OP_PUSHDATA2.
+ * - Script size: 1 (OP_RETURN) + 1 (OP_PUSHDATA2) + 2 (len) + payload = 496–502 bytes.
+ * - Stripped tx size: 4 + 1 + 41 + 1 + output(8 + 1 + script) + 4 = 556–562 bytes.
+ * - Witness size: 108–111 bytes (marker/flag + count + sig(70–73) + pubkey).
+ * - vbytes = ceil((stripped*4 + witness) / 4) = 583–590 vB.
+ */
+const OP_RETURN_SCRIPT_BYTES = VAULT_CONTENT_BYTES.map(bytes => bytes + 4);
+const OP_RETURN_OUTPUT_BYTES = OP_RETURN_SCRIPT_BYTES.map(bytes => bytes + 9);
+const OP_RETURN_STRIPPED_BYTES = OP_RETURN_OUTPUT_BYTES.map(
+  bytes => bytes + 51
+);
+const OP_RETURN_BACKUP_TX_VBYTES = uniqueSorted(
+  OP_RETURN_STRIPPED_BYTES.flatMap(strippedBytes =>
+    P2WPKH_WITNESS_BYTES.map(witnessBytes =>
+      Math.ceil((strippedBytes * 4 + witnessBytes) / 4)
+    )
+  )
+);
+
+// Reveal tx vsize derivation (1 P2TR inscription input → 1 P2WPKH output).
+// 1) Trigger serialized size = 215–218 bytes; panic serialized size = 271–274 bytes.
+// 2) Entry = 1 (ver) + 1 (len) + trigger + 1 (len) + panic = 489–495 bytes.
+// 3) Content = "REW"(3) + entry = 492–498 bytes.
+// 4) Tapscript length = 103 (overhead) + content = 595–601 bytes.
+// 5) Witness size (marker/flag + stack count + sig + tapscript + control block)
+//    = 2 + 1 + 66 + (3 + tapscript) + 34 = 701–707 bytes.
+// 6) Stripped size = 82 bytes → 328 wu.
+// 7) Weight = 1029–1035 wu → vsize = 258–259 vB.
+const INSCRIPTION_TAPSCRIPT_BYTES = VAULT_CONTENT_BYTES.map(
+  bytes => bytes + 103
+);
+const INSCRIPTION_REVEAL_WITNESS_BYTES = INSCRIPTION_TAPSCRIPT_BYTES.map(
+  bytes => bytes + 106
+);
+const INSCRIPTION_REVEAL_STRIPPED_BYTES = 82;
+const INSCRIPTION_REVEAL_BACKUP_TX_VBYTES = uniqueSorted(
+  INSCRIPTION_REVEAL_WITNESS_BYTES.map(witnessBytes =>
+    Math.ceil((INSCRIPTION_REVEAL_STRIPPED_BYTES * 4 + witnessBytes) / 4)
+  )
+);
+
+// Commit tx vsize derivation (1 P2WPKH input → 1 P2TR output).
+// 1) Stripped size (non‑witness):
+//    - version: 4
+//    - vin count: 1
+//    - input: 41 (prevout 36 + scriptLen 1 + sequence 4)
+//    - vout count: 1
+//    - output (P2TR): 8 (value) + 1 (script len) + 34 (script) = 43
+//    - locktime: 4
+//    → stripped = 4 + 1 + 41 + 1 + 43 + 4 = 94 bytes
+// 2) Witness size for P2WPKH input (including segwit marker/flag):
+//    - marker/flag: 2
+//    - stack count: 1
+//    - sig: 70–73 + 1 len
+//    - pubkey: 33 + 1 len
+//    → witness = 108–111 bytes
+// 3) Weight = stripped*4 + witness = 94*4 + 108–111 = 484–487 wu
+// 4) vsize = ceil(weight / 4) = ceil(484–487 / 4) = 121–122 vB
+const INSCRIPTION_COMMIT_BACKUP_TX_VBYTES = [121, 122];
+
+const INSCRIPTION_BACKUP_TX_VBYTES = uniqueSorted(
+  INSCRIPTION_COMMIT_BACKUP_TX_VBYTES.flatMap(commitVbytes =>
+    INSCRIPTION_REVEAL_BACKUP_TX_VBYTES.map(
+      revealVbytes => commitVbytes + revealVbytes
+    )
+  )
+);
+
 export type UtxosData = Array<{
   tx: Transaction;
   txHex: string;
@@ -94,20 +209,6 @@ const serializeVaultEntry = ({
     panicTx
   ]);
 };
-
-/**
- * Estimated vbytes for the backup tx (1 P2WPKH input, 1 OP_RETURN output).
- *
- * - Trigger tx size: 217–219 bytes (107 stripped + 110–112 witness).
- * - Panic tx size: 269–271 bytes (95 stripped + 174–176 witness).
- * - Serialized entry size: 1 (version) + 1 (trigger len) + trigger + 1 (panic len) + panic.
- * - OP_RETURN payload: 3 ("REW") + entry = 492–496 bytes → OP_PUSHDATA2.
- * - Script size: 1 (OP_RETURN) + 1 (OP_PUSHDATA2) + 2 (len) + payload = 496–500 bytes.
- * - Stripped tx size: 4 + 1 + 41 + 1 + output(8 + 3 + script) + 4 = 558–562 bytes.
- * - Witness size: 109–111 bytes (segwit marker/flag + count + sig(71–73) + pubkey).
- * - vbytes = ceil((stripped*4 + witness) / 4) = 586–590 vB.
- */
-export const OP_RETURN_BACKUP_TX_VBYTES = [586, 587, 588, 589, 590];
 
 const createTriggerDescriptor = ({
   unvaultKey,
@@ -440,19 +541,6 @@ export const createVault = ({
   const vaultVsize = txVault.virtualSize();
   if (vaultVsize > selected.vsize)
     throw new Error('vsize larger than coinselected estimated one');
-
-  //////////////////////
-  // Trigger (135 vB):
-  // 1 P2WPKH input, 2 outputs (P2A + P2WSH).
-  // - Stripped size: 107 bytes
-  //   - Version 4 + vin 1 + input 41 + vout 1 + outputs 56 + locktime 4
-  //   - Outputs = P2A (13) + P2WSH (43)
-  // - Witness size: 110–112 bytes
-  //   - Marker/flag 2
-  //   - Stack items: sig (73–75 incl. length) + pubkey (34 incl. length) + count (1)
-  // - Weight: 538–540 wu → vsize = always 135 vB
-  //////////////////////
-
   const panicKey = randomKey;
   const triggerDescriptor = createTriggerDescriptor({
     unvaultKey,
@@ -489,20 +577,8 @@ export const createVault = ({
   });
   triggerInputFinalizer({ psbt: psbtTrigger });
   const triggerVsize = psbtTrigger.extractTransaction().virtualSize();
-  if (triggerVsize !== 135)
+  if (!TRIGGER_TX_VBYTES.includes(triggerVsize))
     throw new Error(`Unexpected trigger vsize: ${triggerVsize}`);
-
-  //////////////////////
-  // Panic (139-140 vB):
-  // 1 P2WSH input, 2 outputs (P2A + addr).
-  // - Stripped size: 95 bytes
-  //  - Version 4 + vin 1 + input 41 + vout 1 + outputs 44 + locktime 4
-  //  - Outputs = P2A (13) + P2WPKH (31)
-  //- Witness size: ~174–176 bytes
-  //  - Marker/flag 2
-  //  - Stack items: sig (73–75 incl. length) + selector (2) + witnessScript (≈96–98 incl. length) + count (1)
-  //- Weight: ~554–558 wu → vsize = 139–140 vB
-  //////////////////////
 
   const psbtPanic = new Psbt({ network });
   psbtPanic.setVersion(3);
@@ -523,7 +599,7 @@ export const createVault = ({
   });
   panicInputFinalizer({ psbt: psbtPanic });
   const panicVsize = psbtPanic.extractTransaction().virtualSize();
-  if (panicVsize < 139 || panicVsize > 140)
+  if (!PANIC_TX_VBYTES.includes(panicVsize))
     throw new Error(`Unexpected panic vsize: ${panicVsize}`);
 
   return {
@@ -597,45 +673,6 @@ export const createOpReturnBackup = ({
 
   return psbtBackup;
 };
-
-// Reveal tx vsize derivation (1 P2TR inscription input → 1 P2WPKH output).
-// 1) Trigger raw size = 217–219 bytes; panic raw size = 269–271 bytes.
-// 2) Entry = 1 (ver) + 1 (len) + trigger + 1 (len) + panic = 489–493 bytes.
-// 3) Content = "REW"(3) + entry = 492–496 bytes.
-// 4) Tapscript length = 103 (overhead) + content = 595–599 bytes.
-// 5) Witness vector size = 1 (count)
-//    + (1+sig) + (3+tapscript) + (1+33 controlblock)
-//    = 39 + sig + tapscript = 699–703 bytes (sig is 65 bytes).
-// 6) Stripped size = 82 bytes → 328 wu.
-// 7) Add marker/flag (2 bytes) to witness: total weight 1029–1033 wu.
-// 8) vsize = ceil(weight/4) = 258–259 vB.
-const INSCRIPTION_REVEAL_BACKUP_TX_VBYTES = [258, 259];
-
-// Commit tx vsize derivation (1 P2WPKH input → 1 P2TR output).
-// 1) Stripped size (non‑witness):
-//    - version: 4
-//    - vin count: 1
-//    - input: 41 (prevout 36 + scriptLen 1 + sequence 4)
-//    - vout count: 1
-//    - output (P2TR): 8 (value) + 1 (script len) + 34 (script) = 43
-//    - locktime: 4
-//    → stripped = 4 + 1 + 41 + 1 + 43 + 4 = 94 bytes
-// 2) Witness size for P2WPKH input (including segwit marker/flag):
-//    - marker/flag: 2
-//    - stack count: 1
-//    - sig: 71–73 + 1 len
-//    - pubkey: 33 + 1 len
-//    → witness = 108–111 bytes
-// 3) Weight = stripped*4 + witness = 94*4 + 108–111 = 484–487 wu
-// 4) vsize = ceil(weight / 4) = ceil(484–487 / 4) = 121–122 vB
-const INSCRIPTION_COMMIT_BACKUP_TX_VBYTES = [121, 122];
-
-export const INSCRIPTION_BACKUP_TX_VBYTES =
-  INSCRIPTION_COMMIT_BACKUP_TX_VBYTES.flatMap(commitVbytes =>
-    INSCRIPTION_REVEAL_BACKUP_TX_VBYTES.map(
-      revealVbytes => commitVbytes + revealVbytes
-    )
-  ).filter((value, index, array) => array.indexOf(value) === index);
 
 export const createInscriptionBackup = ({
   vaultIndex,
