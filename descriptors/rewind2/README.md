@@ -1,59 +1,121 @@
-# Rewind 2 Architecture
+# Rewind 2 Backup Strategies
 
-## Design Decision: OP_RETURN vs. Inscriptions
+This document explores different backup strategies for Rewind 2 that commit the
+**trigger** and **panic** transactions on-chain. The goal is that a user can
+restore a vault wallet on a fresh device using only the 12-word BIP39 mnemonic,
+without needing extra digital backups.
 
-Rewind 2 utilizes `OP_RETURN` for storing backup data, prioritizing transaction reliability and atomicity over economic optimization (which might favor Inscriptions).
+## Background
 
-### Motivation: Atomicity
+Past proposals (including Rewind Bitcoin v1) experimented with centralized or
+P2P-style backups: https://rewindbitcoin.com/community-backups
 
-The primary goal is to ensure the **Vault Transaction** and the **Backup Transaction** are mined atomically. We must avoid a scenario where a Vault is created (funds locked) but the Backup fails to confirm, which would lead to a loss of data required to recover the funds.
+Those designs depend on external services. The approach explored here avoids
+that dependency by storing the backup payload on-chain. This is a controversial
+tradeoff, but this document focuses strictly on the available technology and
+its constraints.
 
-To achieve this, the Vault and Backup transactions should ideally be submitted and mined as a package.
+## What a vault wallet needs
 
-### Constraint: Bitcoin Core Package Relay Limits
+A vault-enabled wallet is defined by three pieces of data:
 
-To support package relay and potentially utilize TRUC (Topologically Restricted Until Confirmation) v3 transactions, we must adhere to Bitcoin Core's package limits.
+1. A 12-word BIP39 mnemonic
+2. Two pre-signed transactions: the **trigger** and **panic** transactions
+3. A small set of descriptors
 
-#### Package Relay + TRUC Summary
+The trigger and panic transactions are the payload that must be backed up.
+Rewind 2 uses deterministic, opinionated descriptors, so they do not need to be
+saved separately. A future direction is to back up descriptors using the same
+on-chain techniques described here.
 
-Package policy details important to our case:
+## Goal
 
-- Package RBF replacement is limited to 1-parent-1-child; parent must spend confirmed outputs.
-- Each tx is validated individually first (v2 vs v3 rules differ; see below).
-- Not all-or-nothing: partial acceptance is possible; mining isn't atomic.
+Private keys are not enough to restore the wallet state. The
+trigger and panic transactions must also be available. Backups ensure those
+transactions are preserved on-chain so a user can restore their wallet state
+using only the mnemonic.
 
-What's different (TRUC vs non-TRUC):
+## Strategies
 
-- v3 (TRUC): parent can be 0-fee and has extra relay rules (only v3 can spend unconfirmed v3.
-- v2 (non-TRUC): must meet standard static minrelay fee individually. A 0-fee v2 parent is rejected even in a package, so package feerate does not rescue below-minrelay parents.
+### OP_RETURN + TRUC (v3)
 
-### Analysis
+Store the backup payload inside a single OP_RETURN transaction and use v3/TRUC
+rules to link it to the vault.
 
-#### The Inscription Approach (Rejected)
+Pros:
 
-Using Inscriptions for backups requires two transactions:
+- Parent can be 0-fee, allowing fee shifting to the backup transaction and ensuring the backup is mined in practice (no vault without a backup).
+- 1-parent-1-child packages are supported by `submitpackage`.
+- Works well with CPFP: the backup can pay the fee for both transactions.
 
-1.  **Commit Transaction**
-2.  **Reveal Transaction**
+Cons:
 
-If the Vault pays for the Backup (to ensure linkage/atomicity), the dependency chain becomes:
-`Vault Tx` → `Commit Tx` → `Reveal Tx`
+- TRUC restrictions: funding inputs must be confirmed before creating the package.
+- TRUC has tighter size and package rules than v2.
 
-This results in a chain of **3 transactions**. This exceeds package submission policy: `submitpackage` only accepts **child-with-parents** packages, meaning the final transaction may include its direct parents, but **parents cannot depend on each other** (no grandparents unless they are also direct parents). The `Vault → Commit → Reveal` chain violates that rule because the vault is a grandparent of the reveal.
+### OP_RETURN + v2 (non-TRUC)
 
-#### The OP_RETURN Approach (Selected)
+Same OP_RETURN payload, but using v2 transactions. Fee shifting still works,
+but the vault transaction must pay the static min-relay fee, and the final
+backup transaction bumps the effective fee rate via CPFP.
 
-Using `OP_RETURN` allows the backup to be contained within a single transaction (or potentially the Vault transaction itself). If implemented as a separate child transaction paid for by the Vault:
-`Vault Tx` → `Backup Tx (OP_RETURN)`
+Pros:
 
-Why the backup must be a descendant of the vault:
+- Simpler policy model, no TRUC-only restrictions.
+- Funding UTXOs do not need confirmation before creating the backup. This makes
+  demos on test networks much faster, since a full backup can be done in seconds
+  instead of waiting for a block.
 
-- The backup payload includes the trigger + panic transactions, which can only be constructed after the vault exists.
-- In the minimal-funds case (e.g., only one UTXO), the vault must fund the backup output because there may be no other inputs available.
+Cons:
 
-This results in a chain of **2 transactions**. This fits comfortably within package relay limits, allowing the Vault and Backup to be propagated and mined together reliably.
+- Each transaction must meet the static min-relay fee individually.
+- A 0-fee parent is rejected even in a package, so fee shifting is limited.
 
-### Transaction Flow Diagram
+### Inscriptions
+
+Use a two-transaction commit/reveal inscription to carry the backup payload.
+Fee shifting uses the minimum relay fee on the vault/commit transaction and a
+higher-fee reveal to bump the effective rate via CPFP.
+
+Pros:
+
+- Fits in the inscription ecosystem.
+- Cheaper than OP_RETURN in most cases: https://bitcoin.stackexchange.com/questions/122321/when-is-op-return-cheaper-than-op-false-op-if
+
+Cons:
+
+- The dependency chain becomes `Vault → Commit → Reveal` when the vault funds
+  the backup.
+- `submitpackage` only accepts _child-with-parents_ packages, where all parents
+  are direct parents of the final child and cannot depend on each other. This
+  chain introduces a grandparent, so it cannot be submitted as a package.
+- Relay is non-atomic: transactions must be pushed sequentially.
+
+## Package policy constraints
+
+Package relay is constrained by `submitpackage` rules:
+
+- Packages must be _child-with-parents_ only.
+- Parents cannot depend on each other (no grandparents unless also direct
+  parents of the child).
+- Transactions are validated individually before package policy is applied.
+
+These rules are why a 3-transaction inscription chain cannot be submitted as a
+single package, while the 2-transaction OP_RETURN chain can.
+
+## Fee shifting to the end of the chain
+
+To maximize the odds that the backup is mined, Rewind 2 can shift most fees to
+the end of the backup chain. The vault transaction pays only the minimum relay
+fee (or zero for TRUC), and the final backup transaction raises the effective
+fee rate via CPFP. This means:
+
+- The backup has the economic incentive to be mined.
+- The vault is only mined because the backup pays the subsidy.
+- This is especially valuable for OP_RETURN_TRUC, where a 0-fee parent is
+  policy-valid when the child pays enough.
+
+## Transaction Flow Diagram
 
 ```mermaid
 flowchart LR
@@ -108,12 +170,11 @@ flowchart LR
 
 ## Vault Output Ordering
 
-The **Vault Transaction** uses a deterministic output ordering so the wallet can
-always identify vaults and enumerate how many exist.
+The vault transaction uses deterministic output ordering so the wallet can
+identify vaults and enumerate how many exist.
 
-- **Output 0**: The output that feeds the **Trigger Transaction**.
-- **Output 1**: A deterministic "vault marker" output used to fund the
-  **Backup Transaction**.
+- Output 0: The output that feeds the trigger transaction.
+- Output 1: A deterministic vault marker output used to fund the backup.
 
 Each vault uses a unique index derived from the wallet seed. The marker output
 is sent to a pubkey derived from the path `m/1073'/<network>'/0'/<index>`, where
