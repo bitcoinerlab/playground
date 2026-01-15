@@ -21,9 +21,6 @@
 //use op_return instrad of inscriptions? This way we can make sure the backup
 //is processed (as a package) together with the vault: https://bitcoin.stackexchange.com/questions/126208/why-would-anyone-use-op-return-over-inscriptions-aside-from-fees
 
-//TODO: shift the fee payment to the end of the backup chain and submit all the
-//txs as a package
-
 import './codesandboxFixes';
 import { readFileSync, writeFileSync } from 'fs';
 import {
@@ -337,27 +334,10 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     });
     const commitTx = inscriptionPsbts.psbtCommit.extractTransaction();
     const revealTx = inscriptionPsbts.psbtReveal.extractTransaction();
-    Log(`📦 Submitting vault + commit + reveal txs as a package...`);
-    const pkgUrl = `${ESPLORA_API}/txs/package`;
-    const pkgRes = await fetch(pkgUrl, {
-      method: 'POST',
-      body: JSON.stringify([
-        vaultTx.toHex(),
-        commitTx.toHex(),
-        revealTx.toHex()
-      ])
-    });
-    if (pkgRes.status === 404) {
-      throw new Error(
-        `Package endpoint not available at ${pkgUrl}. Your Esplora instance likely doesn't support /txs/package`
-      );
-    }
-    if (!pkgRes.ok) {
-      const errText = await pkgRes.text();
-      throw new Error(`Package submit failed (${pkgRes.status}): ${errText}`);
-    }
-    const pkgRespJson = await pkgRes.json();
-    Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
+    Log(`📦 Submitting vault + commit + reveal txs sequentially...`);
+    await explorer.push(vaultTx.toHex());
+    await explorer.push(commitTx.toHex());
+    await explorer.push(revealTx.toHex());
 
     Log(`
  vault tx id: ${vaultTx.getId()}

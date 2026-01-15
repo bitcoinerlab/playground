@@ -25,7 +25,7 @@ Package policy details important to our case:
 What's different (TRUC vs non-TRUC):
 
 - v3 (TRUC): parent can be 0-fee and has extra relay rules (only v3 can spend unconfirmed v3.
-- v2 (non-TRUC): must meet standard static minrelay fee. A 0-fee v2 parent is rejected even in a package.
+- v2 (non-TRUC): must meet standard static minrelay fee individually. A 0-fee v2 parent is rejected even in a package, so package feerate does not rescue below-minrelay parents.
 
 ### Analysis
 
@@ -39,7 +39,7 @@ Using Inscriptions for backups requires two transactions:
 If the Vault pays for the Backup (to ensure linkage/atomicity), the dependency chain becomes:
 `Vault Tx` → `Commit Tx` → `Reveal Tx`
 
-This results in a chain of **3 transactions**. This exceeds standard package relay limits for unconfirmed transaction chains (often limited to 2 for TRUC/V3 or specific package submission rules).
+This results in a chain of **3 transactions**. This exceeds package submission policy: `submitpackage` only accepts **child-with-parents** packages, meaning the final transaction may include its direct parents, but **parents cannot depend on each other** (no grandparents unless they are also direct parents). The `Vault → Commit → Reveal` chain violates that rule because the vault is a grandparent of the reveal.
 
 #### The OP_RETURN Approach (Selected)
 
