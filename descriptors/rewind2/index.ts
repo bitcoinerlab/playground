@@ -184,6 +184,7 @@ Every reload reuses the same mnemonic for convenience.`);
     maxVaultableAmount = 0;
   } else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
 
+  Log(`Backup type: ${BACKUP_TYPE}`);
   Log(`The backup will cost: ${vaultMaxFundsContext.backupCost}`);
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   Log(`🔍 Wallet UTXOs: ${utxosAndBalance.utxos.length}`);

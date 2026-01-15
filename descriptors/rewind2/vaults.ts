@@ -648,7 +648,7 @@ export const createOpReturnBackup = ({
   const content = Buffer.concat([header, entry]);
 
   const psbtBackup = new Psbt({ network }); // Use same network
-  psbtVault.setVersion(backupType === 'OP_RETURN_TRUC' ? 3 : 2);
+  psbtBackup.setVersion(backupType === 'OP_RETURN_TRUC' ? 3 : 2);
 
   // Input: The output from the vault
   const backupInputFinalizer = backupOutput.updatePsbtAsInput({
