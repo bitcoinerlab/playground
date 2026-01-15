@@ -39,7 +39,7 @@ import {
 } from '@bitcoinerlab/discovery';
 
 //FIXME: this still needs a mechanism to keep some margin for paying anchors
-const BACKUP_TYPE = 'INSCRIPTION';
+const BACKUP_TYPE = 'OP_RETURN_TRUC';
 const FEE_RATE = 2.0;
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
@@ -357,6 +357,34 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     });
 
     const backupTx = psbtBackup.extractTransaction();
+    if (BACKUP_TYPE === 'OP_RETURN_TRUC') {
+      let firstAttempt = true;
+      for (;;) {
+        await discovery.fetch({ descriptors });
+        const confirmedUtxos = discovery.getUtxosAndBalance({
+          descriptors,
+          txStatus: TxStatus.CONFIRMED
+        }).utxos;
+        const pendingUtxos = vault.vaultUtxosData.filter(
+          utxo => !confirmedUtxos.includes(`${utxo.tx.getId()}:${utxo.vout}`)
+        );
+        if (pendingUtxos.length === 0) {
+          Log(`🔍 All vault funding UTXOs are confirmed.`);
+          break;
+        }
+        if (firstAttempt)
+          Log(`
+
+⛓️ TRUC rules require vault funding UTXOs to be confirmed.
+⏳ Waiting for ${pendingUtxos.length} UTXO(s) to confirm...`);
+        else
+          Log(
+            `⏳ Still waiting for ${pendingUtxos.length} UTXO(s) to confirm...`
+          );
+        await new Promise(r => setTimeout(r, firstAttempt ? 5000 : 10000));
+        firstAttempt = false;
+      }
+    }
     Log(`📦 Submitting vault + backup as a package...`);
     const pkgUrl = `${ESPLORA_API}/txs/package`;
     const pkgRes = await fetch(pkgUrl, {
