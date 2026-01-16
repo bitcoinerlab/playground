@@ -327,13 +327,21 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   const { psbtVault, psbtTrigger, psbtPanic } = vault;
 
   const vaultTx = psbtVault.extractTransaction();
+  const vaultInputValue = vault.vaultUtxosData.reduce(
+    (sum, utxo) => sum + (utxo.tx.outs[utxo.vout]?.value ?? 0),
+    0
+  );
+  const vaultOutputValue = vaultTx.outs.reduce(
+    (sum, out) => sum + out.value,
+    0
+  );
+  const vaultFee = vaultInputValue - vaultOutputValue;
+  Log(`💸 Vault tx fee (pure miner fee paid by the vault tx): ${vaultFee}`);
   Log(
-    `💸 Vault tx fee: ${
-      vault.vaultUtxosData.reduce(
-        (sum, utxo) => sum + (utxo.tx.outs[utxo.vout]?.value ?? 0),
-        0
-      ) - vaultTx.outs.reduce((sum, out) => sum + out.value, 0)
-    }`
+    `📦 Backup funding output reserved inside the vault tx: ${vault.backupOutputValue}`
+  );
+  Log(
+    `📦 Backup fee estimate (what the backup tx will burn later): ${vault.backupCost}`
   );
 
   if (BACKUP_TYPE === 'INSCRIPTION') {
