@@ -73,11 +73,16 @@ export const getUtxosData = (
   });
 };
 
-const getChangeDescriptorWithIndex = (discovery: DiscoveryInstance) => {
+const getChangeDescriptorWithIndex = (
+  discovery: DiscoveryInstance,
+  fallbackDescriptor: string
+) => {
   const accounts = discovery.getUsedAccounts();
   const mainAccount = accounts[0];
-  if (!mainAccount) throw new Error('Could not find the main account');
-  const changeDescriptor = mainAccount.replace(/\/0\/\*/g, '/1/*');
+  const changeDescriptor = mainAccount
+    ? mainAccount.replace(/\/0\/\*/g, '/1/*')
+    : fallbackDescriptor;
+  if (!changeDescriptor) throw new Error('Missing change descriptor');
   return {
     descriptor: changeDescriptor,
     index: discovery.getNextIndex({ descriptor: changeDescriptor })
@@ -153,7 +158,8 @@ Every reload reuses the same mnemonic for convenience.`);
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/*' }),
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/1/*' })
   ];
-  if (!descriptors[0]) throw new Error();
+  if (!descriptors[0] || !descriptors[1])
+    throw new Error('Could not derive wallet descriptors');
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   await discovery.fetch({ descriptors });
   const initialHistoryLength = discovery.getHistory({
@@ -168,7 +174,10 @@ Every reload reuses the same mnemonic for convenience.`);
     utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
     masterNode,
     randomMasterNode,
-    changeDescriptorWithIndex: getChangeDescriptorWithIndex(discovery),
+    changeDescriptorWithIndex: getChangeDescriptorWithIndex(
+      discovery,
+      descriptors[1]
+    ),
     vaultIndex: 0, //Dummmy value is ok just to grab vsize
     backupType: BACKUP_TYPE,
     shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
@@ -243,7 +252,10 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
     masterNode,
     randomMasterNode,
-    changeDescriptorWithIndex: getChangeDescriptorWithIndex(discovery),
+    changeDescriptorWithIndex: getChangeDescriptorWithIndex(
+      discovery,
+      descriptors[1]
+    ),
     vaultIndex: 0, //Dummmy value is ok just to grab vsize
     backupType: BACKUP_TYPE,
     shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
@@ -286,7 +298,10 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     }),
     network
   }).getAddress();
-  const changeDescriptorWithIndex = getChangeDescriptorWithIndex(discovery);
+  const changeDescriptorWithIndex = getChangeDescriptorWithIndex(
+    discovery,
+    descriptors[1]
+  );
   const unvaultKey = keyExpressionBIP32({
     masterNode,
     originPath: "/0'",
