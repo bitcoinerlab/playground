@@ -1,4 +1,12 @@
-# Rewind 2 Backup Strategies
+# Onchain Wallet Backup Strategies
+
+## Vault refresher
+
+A vault-enabled wallet locks funds to a setup-only key and then destroys that key material. Before deletion, it pre-signs a small, fixed transaction set, so later spending can only follow those pre-committed ways (covenant-like in effect).
+
+To move funds out, you broadcast a pre-signed **trigger** (unvault) transaction. The trigger creates an intermediate output where the “normal spend” path is gated by a **relative timelock**.
+
+If the trigger is unexpected (someone got access to your wallet), you can broadcast another pre-signed **panic** (rescue/cancel) transaction that _spends the trigger’s output_ immediately to an emergency cold destination, without waiting out the timelock.
 
 This document explores different backup strategies for Rewind 2 that commit the
 **trigger** and **panic** transactions on-chain. The goal is that a user can
@@ -8,7 +16,7 @@ without needing extra digital backups.
 ## Background
 
 Past proposals (including Rewind Bitcoin v1) experimented with centralized or
-P2P-style backups: https://rewindbitcoin.com/community-backups
+P2P-style backups: <https://rewindbitcoin.com/community-backups>
 
 Those designs depend on external services. The approach explored here avoids
 that dependency by storing the backup payload on-chain. This is a controversial
@@ -28,12 +36,12 @@ Rewind 2 uses deterministic, opinionated descriptors, so they do not need to be
 saved separately. A future direction is to back up descriptors using the same
 on-chain techniques described here.
 
-## Goal
+## Why on-chain backups
 
-Private keys are not enough to restore the wallet state. The
-trigger and panic transactions must also be available. Backups ensure those
-transactions are preserved on-chain so a user can restore their wallet state
-using only the mnemonic.
+Private keys alone are not enough to restore a vault wallet on a fresh device.
+The trigger and panic transactions must also be available. By committing them
+on-chain, the user can restore the wallet state using only the mnemonic, without
+keeping extra digital backups around.
 
 ## Strategies
 
@@ -80,7 +88,7 @@ higher-fee reveal to bump the effective rate via CPFP.
 Pros:
 
 - Fits in the inscription ecosystem.
-- Cheaper than OP_RETURN in most cases: https://bitcoin.stackexchange.com/questions/122321/when-is-op-return-cheaper-than-op-false-op-if
+- Cheaper than OP_RETURN in most cases: <https://bitcoin.stackexchange.com/questions/122321/when-is-op-return-cheaper-than-op-false-op-if>
 
 Cons:
 
@@ -115,7 +123,12 @@ fee rate via CPFP. This means:
 - This is especially valuable for OP_RETURN_TRUC, where a 0-fee parent is
   policy-valid when the child pays enough.
 
-## Transaction Flow Diagram
+## Transaction Flow Diagrams
+
+### OP_RETURN flow (packageable)
+
+This flow applies to OP_RETURN backups (v2/v3), where the vault and backup
+transactions can be submitted as a package.
 
 ```mermaid
 flowchart LR
@@ -148,6 +161,63 @@ flowchart LR
 
     %% Vault outputs
     V --> B
+    V --> T
+    V --> C
+    style C fill:transparent,stroke:transparent
+
+    %% Trigger Tx outputs
+    T --> F
+    T --> A_T[P2A]
+    style A_T fill:transparent,stroke:transparent
+
+    %% Forked outputs
+    F --> P[Panic Tx<br/>*can be pushed before timelock*]
+    F --> UTXON
+
+    %% Panic Tx outputs
+    P --> E[Emergency UTXO]
+    style E fill:transparent,stroke:transparent
+    P --> A_P[P2A]
+    style A_P fill:transparent,stroke:transparent
+```
+
+### Inscription flow (non-packageable)
+
+Inscriptions use a commit+reveal chain, so the backup consists of two
+transactions and cannot be submitted as a single package.
+
+```mermaid
+flowchart LR
+    U1[Prev Tx1]
+    U2[Prev Tx2]
+    U3[Prev Tx3]
+
+    V[Vault Tx]
+    subgraph BackupTxs[Backup Txs]
+        direction TB
+        Cmt[Commit Tx]
+        Rev[Reveal Tx]
+    end
+
+    T[Trigger Tx]
+    C[Change UTXO]
+
+    %% Fork node
+    F(( ))
+    style F fill:transparent,stroke:transparent
+
+    %% UTXO N as borderless box
+    UTXON[Becomes an UTXO after timelock]
+    style UTXON fill:transparent,stroke:transparent
+
+    %% Inputs
+    U1 --> V
+    U2 --> V
+    U3 --> V
+
+    %% Vault outputs
+    V --> Cmt
+    Cmt --> Rev
     V --> T
     V --> C
     style C fill:transparent,stroke:transparent

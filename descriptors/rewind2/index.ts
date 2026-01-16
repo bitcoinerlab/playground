@@ -21,6 +21,7 @@
 //use op_return instrad of inscriptions? This way we can make sure the backup
 //is processed (as a package) together with the vault: https://bitcoin.stackexchange.com/questions/126208/why-would-anyone-use-op-return-over-inscriptions-aside-from-fees
 
+//FIXME: https://codesandbox.io/p/sandbox/github/bitcoinerlab/playground/tree/rewind2/descriptors/rewind2?file=%2Findex.ts&from-embed - this will fail
 import './codesandboxFixes';
 import { readFileSync, writeFileSync } from 'fs';
 import {
