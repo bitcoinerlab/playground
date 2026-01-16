@@ -3,7 +3,7 @@ const SIGNING_MESSAGE = 'Satoshi Nakamoto'; //Can be any, but don't change it
 
 import type { BIP32Interface } from 'bip32';
 import { sha256 } from '@noble/hashes/sha2';
-import { MessageFactory } from 'bitcoinjs-message';
+import { MessageFactory } from '@jl.landabaso/btcmessage';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 const MessageAPI = MessageFactory(secp256k1);
 
