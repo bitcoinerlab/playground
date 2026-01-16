@@ -94,7 +94,6 @@ const { Discovery } = DiscoveryFactory(explorer, network);
 const { wpkhBIP32 } = scriptExpressions;
 const { Output, BIP32 } = DescriptorsFactory(secp256k1);
 
-import type { Output } from 'bitcoinjs-lib/src/transaction';
 import { isWeb, JSONf, Log } from './utils';
 import {
   getVaultContext,
