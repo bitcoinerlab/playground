@@ -127,9 +127,9 @@ flowchart LR
 Pros:
 
 - Parent (`Vault Tx`) can be 0‑fee, allowing fee shifting to the backup
-transaction and ensuring (in practice) that a vault is not created unless the
-backup exists. Miners could still include a 0‑fee parent without a subsidizing
-child but it is unlikely in practice.
+  transaction and ensuring (in practice) that a vault is not created unless the
+  backup exists. Miners could still include a 0‑fee parent without a subsidizing
+  child but it is unlikely in practice.
 
 Cons:
 
@@ -147,14 +147,14 @@ Pros:
 
 - Simpler policy model, no TRUC restrictions.
 - The `Vault Tx` funding inputs (`Prev Txs`) do not need confirmation before
-creating the vault + backup package. This makes testnet demos much faster since
-a full backup can be done in seconds after faucet funding instead of waiting for
-a block.
+  creating the vault + backup package. This makes testnet demos much faster since
+  a full backup can be done in seconds after faucet funding instead of waiting for
+  a block.
 
 Cons:
 
 - Each transaction must meet the static min-relay fee (`0.1 sats/vB`)
-individually.
+  individually.
 - A 0-fee parent is rejected even in a package, so fee shifting is limited.
 
 ### Inscriptions
@@ -218,7 +218,8 @@ flowchart LR
 Pros:
 
 - Cheaper than OP_RETURN for payloads [over 142
-bytes](https://bitcoin.stackexchange.com/questions/122321/when-is-op-return-cheaper-than-op-false-op-if) (which is often the case).
+  bytes](https://bitcoin.stackexchange.com/questions/122321/when-is-op-return-cheaper-than-op-false-op-if)
+  (which is often the case).
 
 Cons:
 
@@ -231,23 +232,14 @@ Cons:
 - Relay is non-atomic: transactions must be pushed sequentially, though CPFP
   still applies to the chain once broadcast.
 
-## Package policy constraints
-
-Package relay is constrained by `submitpackage` rules:
-
-- Packages must be _child-with-parents_ only.
-- Parents cannot depend on each other (no grandparents unless also direct
-  parents of the child).
-- Transactions are validated individually before package policy is applied.
-
-These rules are why a 3-transaction inscription chain cannot be submitted as a
-single package, while the 2-transaction OP_RETURN chain can.
-
 ## Fee shifting to the end of the chain
 
-To maximize the odds that the backup is mined, Rewind 2 can shift most fees to
-the end of the backup chain. The vault transaction pays only the minimum relay
-fee (or zero for TRUC) and the final backup transaction raises the effective fee
+This section dives a bit deeper on fee‑shifting and why it improves backup
+reliability.
+
+To maximize the odds that the backup is mined, Rewind 2 shifts most fees to the
+end of the backup chain. The vault transaction pays only the minimum relay fee
+(or zero for TRUC) and the final backup transaction raises the effective fee
 rate via CPFP. This means:
 
 - The backup has the economic incentive to be mined.
@@ -255,7 +247,12 @@ rate via CPFP. This means:
 - This is especially valuable for OP_RETURN_TRUC, where a 0-fee parent is
   policy-valid when the child pays enough.
 
-## Vault Output Ordering
+## Vault Design Details
+
+This section focuses on the vault‑specific aspects of the on‑chain backup
+design.
+
+### Vault Output Ordering
 
 The vault transaction uses deterministic output ordering so the wallet can
 identify vaults and enumerate how many exist.
@@ -272,3 +269,7 @@ To create a new vault, the wallet scans these indices, detects which ones are
 already used and selects the next unused index. This lets the wallet discover
 and count all vaults just by checking which deterministic vault paths have been
 used, without any extra metadata.
+
+### Backup Encryption
+
+WIP
