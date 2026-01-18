@@ -1,4 +1,3 @@
-const REWINDBITCOIN_INSCRIPTION_NUMBER = 123456;
 const LOCK_BLOCKS = 2;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 const VAULT_PURPOSE = 1073;
@@ -25,8 +24,10 @@ import {
   INSCRIPTION_BACKUP_TX_VBYTES,
   INSCRIPTION_COMMIT_BACKUP_TX_VBYTES,
   INSCRIPTION_REVEAL_BACKUP_TX_VBYTES,
+  INSCRIPTION_REVEAL_GARBAGE_BYTES,
   OP_RETURN_BACKUP_TX_VBYTES,
   PANIC_TX_VBYTES,
+  INSCRIPTION_CONTENT_TYPE,
   TRIGGER_TX_VBYTES
 } from './vaultSizes';
 // @ts-ignore
@@ -230,14 +231,10 @@ const coinselectVaultUtxosData = ({
 
 const getBackupCost = (
   backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION',
-  feeRate: number,
-  dustOutput: OutputInstance
+  feeRate: number
 ) => {
   if (backupType === 'INSCRIPTION')
-    return Math.ceil(
-      Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate +
-        dustThreshold(dustOutput)
-    );
+    return Math.ceil(Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate);
   if (backupType === 'OP_RETURN_TRUC' || backupType === 'OP_RETURN_V2')
     return Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate);
   throw new Error('backupCost unset');
@@ -290,7 +287,7 @@ export const getVaultContext = ({
     network
   });
   const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
-  const backupCost = getBackupCost(backupType, feeRate, changeOutput);
+  const backupCost = getBackupCost(backupType, feeRate);
   // Run the coinselector
   const selected = coinselectVaultUtxosData({
     utxosData,
@@ -575,7 +572,6 @@ export const createInscriptionBackup = ({
   psbtTrigger,
   psbtPanic,
   psbtVault,
-  changeDescriptorWithIndex,
   shiftFeesToBackupEnd = false,
   network
 }: {
@@ -585,14 +581,6 @@ export const createInscriptionBackup = ({
   psbtTrigger: Psbt;
   psbtPanic: Psbt;
   psbtVault: Psbt;
-  /**
-   * The easeiest would have been to create a fixed OP_RETURN or P2A output,
-   * however this creates a very small tx. And Bitcoin core does not relay
-   * super small txs for some reason.... so better pass some change.
-   * FIXME: this assimes P2WPKH but i will change this to create an OP_RETURN
-   * with dust... to match the min relay abletx size - then change vaultSizes
-   */
-  changeDescriptorWithIndex: { descriptor: string; index: number };
   shiftFeesToBackupEnd?: boolean;
   network: Network;
 }) => {
@@ -611,7 +599,7 @@ export const createInscriptionBackup = ({
   const commitNode = masterNode.derivePath(commitPath);
 
   const backupInscription = new Inscription({
-    contentType: `application/vnd.rewindbitcoin;readme=inscription:${REWINDBITCOIN_INSCRIPTION_NUMBER}`,
+    contentType: INSCRIPTION_CONTENT_TYPE,
     content,
     bip32Derivation: {
       masterFingerprint: masterNode.fingerprint,
@@ -628,18 +616,12 @@ export const createInscriptionBackup = ({
   const backupOut = vaultTx.outs[BACKOUT_OUTPUT_INDEX];
   if (!backupOut) throw new Error('Backup output not found in vault tx');
   const backupOutputValue = backupOut.value;
-  const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
-
-  // NOTE: wallet balance will remain at least the dust threshold for the
-  // change output, because the reveal tx creates a dust change output that is
-  // intentionally kept spendable.
-  const revealOutputValue = dustThreshold(changeOutput);
   const commitFeeRate = shiftFeesToBackupEnd ? MIN_RELAY_FEE_RATE : feeRate;
   const commitFeeTarget = Math.ceil(
     Math.max(...INSCRIPTION_COMMIT_BACKUP_TX_VBYTES) * commitFeeRate
   );
   const commitOutputValue = backupOutputValue - commitFeeTarget;
-  if (commitOutputValue <= revealOutputValue)
+  if (commitOutputValue <= 0)
     throw new Error('Insufficient vault backup output for reveal fee');
 
   const psbtCommit = new Psbt({ network });
@@ -664,10 +646,12 @@ export const createInscriptionBackup = ({
     txHex: commitTx.toHex(),
     vout: 0
   });
-  changeOutput.updatePsbtAsOutput({
-    psbt: psbtReveal,
-    value: revealOutputValue
-  });
+  const revealGarbage = Buffer.alloc(INSCRIPTION_REVEAL_GARBAGE_BYTES);
+  const embed = payments.embed({ data: [revealGarbage] });
+  if (!embed.output)
+    throw new Error('Could not create reveal OP_RETURN output');
+  psbtReveal.addOutput({ script: embed.output, value: 0 });
+  // OP_RETURN payload keeps the reveal tx above the min relay size.
   signers.signBIP32({ psbt: psbtReveal, masterNode });
   revealInputFinalizer({ psbt: psbtReveal });
 

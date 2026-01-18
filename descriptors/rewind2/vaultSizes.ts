@@ -7,15 +7,41 @@ const uniqueSorted = (values: number[]) =>
     .filter((value, index, array) => array.indexOf(value) === index)
     .sort((a, b) => a - b);
 
-const INSCRIPTION_CONTENT_TYPE =
+export const INSCRIPTION_CONTENT_TYPE =
   'application/vnd.rewindbitcoin;readme=inscription:123456';
 const INSCRIPTION_CONTENT_TYPE_BYTES = Buffer.byteLength(
   INSCRIPTION_CONTENT_TYPE
 );
 const INSCRIPTION_PROTOCOL_ID_BYTES = Buffer.byteLength('ord');
 
+// https://github.com/bitcoin/bitcoin/blob/22bde74d1d8f861323eabb8dc60401bbf1226544/src/policy/policy.h#L36
+const MIN_STANDARD_TX_NONWITNESS_SIZE = 65;
+
 const opReturnScriptBytes = (payloadBytes: number) =>
   1 + pushdataEncodingLength(payloadBytes) + payloadBytes;
+
+const opReturnOutputBytes = (payloadBytes: number) => {
+  const scriptBytes = opReturnScriptBytes(payloadBytes);
+  // output value (sats) = fixed 8-byte value.
+  return scriptBytes + 8 + encodingLength(scriptBytes);
+};
+
+const REVEAL_STRIPPED_BASE_BYTES =
+  4 + // version
+  1 + // input count
+  41 + // input (prevout 36 + scriptLen 1 + sequence 4)
+  encodingLength(1) + // output count (1 output)
+  4; // locktime
+
+// Minimum OP_RETURN payload that clears standard min-size policy.
+export const INSCRIPTION_REVEAL_GARBAGE_BYTES = (() => {
+  const minStandardStrippedBytes = MIN_STANDARD_TX_NONWITNESS_SIZE;
+  for (let payloadBytes = 0; ; payloadBytes += 1) {
+    const strippedBytes =
+      REVEAL_STRIPPED_BASE_BYTES + opReturnOutputBytes(payloadBytes);
+    if (strippedBytes >= minStandardStrippedBytes) return payloadBytes;
+  }
+})();
 
 const inscriptionTapscriptBytes = (contentBytes: number) => {
   const pushXOnly = pushdataEncodingLength(32) + 32;
@@ -119,24 +145,15 @@ export const OP_RETURN_BACKUP_TX_VBYTES = uniqueSorted(
   )
 );
 
-// Reveal tx vsize derivation (1 P2TR inscription input → 1 P2WPKH output).
 const INSCRIPTION_REVEAL_SCRIPT_BYTES = VAULT_CONTENT_BYTES.map(
   inscriptionTapscriptBytes
 );
 const INSCRIPTION_REVEAL_WITNESS_BYTES = INSCRIPTION_REVEAL_SCRIPT_BYTES.map(
   inscriptionRevealWitnessBytes
 );
-
-//the stripped (non‑witness) size of the reveal transaction, which has
-//1 input and 1 P2WPKH output:
-//- 4 bytes: version
-//- 1 byte: input count
-//- 41 bytes: input (prevout 36 + scriptLen 1 + sequence 4)
-//- 1 byte: output count
-//- 31 bytes: P2WPKH output (8 value + 1 script len + 22 script)
-//- 4 bytes: locktime
-//FIXME: this assimes P2WPKH but i will change this to create an OP_RETURN with dust... to match the min relay abletx size
-const INSCRIPTION_REVEAL_STRIPPED_BYTES = 82;
+const INSCRIPTION_REVEAL_STRIPPED_BYTES =
+  REVEAL_STRIPPED_BASE_BYTES +
+  opReturnOutputBytes(INSCRIPTION_REVEAL_GARBAGE_BYTES);
 
 export const INSCRIPTION_REVEAL_BACKUP_TX_VBYTES = uniqueSorted(
   INSCRIPTION_REVEAL_WITNESS_BYTES.map(witnessBytes =>

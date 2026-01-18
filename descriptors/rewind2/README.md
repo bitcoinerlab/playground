@@ -104,6 +104,8 @@ flowchart LR
 
     %% Vault outputs
     V --> B
+    B --> O_B[OP_RETURN]
+    style O_B fill:transparent,stroke:transparent
     V --> T
     V --> C
     style C fill:transparent,stroke:transparent
@@ -163,6 +165,10 @@ Inscriptions use a commit+reveal chain with the payload in the reveal
 transaction witness. Fee shifting uses minimum relay fees on the vault/commit
 transactions and a higher‑fee reveal transaction for CPFP.
 
+The reveal transaction creates a small OP_RETURN padding output. The padding
+is just garbage data used to avoid Core's `tx-size-small` policy (non‑witness
+size >= 65 bytes).
+
 ```mermaid
 flowchart LR
     U1[Prev Tx1]
@@ -170,7 +176,7 @@ flowchart LR
     U3[Prev Tx3]
 
     V[Vault Tx]
-    subgraph BackupTxs[Backup Txs -*no package*-]
+    subgraph BackupTxs[Inscription Backup Txs -*no package*-]
         direction TB
         Cmt[Commit Tx]
         Rev[Reveal Tx]
@@ -195,6 +201,8 @@ flowchart LR
     %% Vault outputs
     V --> Cmt
     Cmt --> Rev
+    Rev --> O_R[OP_RETURN padding]
+    style O_R fill:transparent,stroke:transparent
     V --> T
     V --> C
     style C fill:transparent,stroke:transparent

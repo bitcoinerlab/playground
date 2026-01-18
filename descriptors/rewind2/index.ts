@@ -108,6 +108,7 @@ import {
   getBackupDescriptor,
   type UtxosData
 } from './vaults';
+import { INSCRIPTION_REVEAL_GARBAGE_BYTES } from './vaultSizes';
 
 const start = async () => {
   await explorer.connect();
@@ -343,6 +344,9 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   Log(
     `📦 Backup fee estimate (what the backup tx will burn later): ${vault.backupCost}`
   );
+  Log(
+    `📦 Reveal OP_RETURN padding to avoid tx-size-small errors: ${INSCRIPTION_REVEAL_GARBAGE_BYTES} bytes`
+  );
 
   if (BACKUP_TYPE === 'INSCRIPTION') {
     const inscriptionPsbts = createInscriptionBackup({
@@ -352,7 +356,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       psbtPanic,
       psbtVault,
       masterNode,
-      changeDescriptorWithIndex,
       shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
       network
     });
