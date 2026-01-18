@@ -260,6 +260,15 @@ rate via CPFP. This means:
 This section focuses on the vault‑specific aspects of the on‑chain backup
 design.
 
+### Fee Anchors for Trigger and Panic (P2A)
+
+The trigger and panic transactions include a P2A output, a bare script that
+creates an anyone‑can‑spend anchor. These transactions are pre‑signed at setup
+time, but the fee environment at broadcast time is unknown. A P2A anchor lets
+the wallet attach a child transaction later to bump the effective feerate via
+CPFP, without changing the pre‑signed tx. This keeps the pre‑signed path valid
+while still allowing fee adjustment when it's actually needed.
+
 ### Vault Output Ordering
 
 The vault transaction uses deterministic output ordering so the wallet can
