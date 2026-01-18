@@ -87,7 +87,7 @@ flowchart LR
     end
 
     T[Trigger Tx]
-    C[Change UTXO]
+    C[Change]
 
     %% Fork node
     F(( ))
@@ -104,7 +104,7 @@ flowchart LR
 
     %% Vault outputs
     V --> B
-    B --> O_B[OP_RETURN]
+    B --> O_B[OP_RETURN backup payload]
     style O_B fill:transparent,stroke:transparent
     V --> T
     V --> C
@@ -120,7 +120,7 @@ flowchart LR
     F --> UTXON
 
     %% Panic Tx outputs
-    P --> E[Emergency UTXO]
+    P --> E[Emergency]
     style E fill:transparent,stroke:transparent
     P --> A_P[P2A]
     style A_P fill:transparent,stroke:transparent
@@ -175,7 +175,7 @@ flowchart LR
     U2[Prev Tx2]
     U3[Prev Tx3]
 
-    V[Vault Tx]
+    V[Vault Tx<br/>*priv key deleted*]
     subgraph BackupTxs[Inscription Backup Txs]
         direction TB
         Cmt[Commit Tx]
@@ -183,7 +183,7 @@ flowchart LR
     end
 
     T[Trigger Tx]
-    C[Change UTXO]
+    C[Change]
 
     %% Fork node
     F(( ))
@@ -217,7 +217,7 @@ flowchart LR
     F --> UTXON
 
     %% Panic Tx outputs
-    P --> E[Emergency UTXO]
+    P --> E[Emergency]
     style E fill:transparent,stroke:transparent
     P --> A_P[P2A]
     style A_P fill:transparent,stroke:transparent
