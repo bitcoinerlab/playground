@@ -176,7 +176,7 @@ flowchart LR
     U3[Prev Tx3]
 
     V[Vault Tx]
-    subgraph BackupTxs[Inscription Backup Txs -*no package*-]
+    subgraph BackupTxs[Inscription Backup Txs]
         direction TB
         Cmt[Commit Tx]
         Rev[Reveal Tx]
@@ -201,7 +201,7 @@ flowchart LR
     %% Vault outputs
     V --> Cmt
     Cmt --> Rev
-    Rev --> O_R[OP_RETURN padding]
+    Rev --> O_R[OP_RETURN garbage padding]
     style O_R fill:transparent,stroke:transparent
     V --> T
     V --> C
