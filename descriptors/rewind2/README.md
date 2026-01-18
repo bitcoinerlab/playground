@@ -15,10 +15,10 @@ PLAYGROUND**](https://bitcoinerlab.com/guides/onchain-wallet-backup) button on
 BitcoinerLAB.com or by [installing and running the code
 locally](https://github.com/bitcoinerlab/playground).
 
-## Vault refresher
+## Vaults: quick recap
 
 A vault-enabled wallet locks funds to a setup-only key and then destroys that
-key material. Before deletion, it pre-signs a small, fixed transaction set, so
+key. Before deletion, it pre-signs a small, fixed transaction set, so
 later spending can only follow those pre-committed ways (covenant-like in
 effect).
 
