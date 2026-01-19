@@ -6,7 +6,11 @@
 .unvaultMnemonic
 .frozenDescriptor
 .p2amnemonic
+.inscriptionsmnemonic
+.rew2mnemonic
+.rew2coldmnemonic
 node_modules/
 docs/
 dist/
 codesandbox/
+.aider*

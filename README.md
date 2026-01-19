@@ -82,6 +82,16 @@ Learn how to construct a **P2A (Pay-to-Anchor)** output and how these outputs ar
 
 ```bash
 npm run descriptors/p2a
+
+### `descriptors/inscriptions`
+
+```bash
+npm run descriptors/inscriptions
+
+### `descriptors/rewind2`
+
+```bash
+npm run descriptors/rewind2
 ```
 
 ## License
