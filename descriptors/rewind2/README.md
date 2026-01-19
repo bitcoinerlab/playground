@@ -86,7 +86,7 @@ flowchart LR
         B[Backup Tx]
     end
 
-    T[Trigger Tx]
+    T[Trigger Tx<br>*v3*]
     C[Change]
 
     %% Fork node
@@ -116,7 +116,7 @@ flowchart LR
     style A_T fill:transparent,stroke:transparent
 
     %% Forked outputs
-    F --> P[Panic Tx<br/>*can be pushed before timelock*]
+    F --> P[Panic Tx *v3*<br/>*can be pushed before timelock*]
     F --> UTXON
 
     %% Panic Tx outputs
@@ -182,7 +182,7 @@ flowchart LR
         Rev[Reveal Tx]
     end
 
-    T[Trigger Tx]
+    T[Trigger Tx<br>*v3*]
     C[Change]
 
     %% Fork node
@@ -213,7 +213,7 @@ flowchart LR
     style A_T fill:transparent,stroke:transparent
 
     %% Forked outputs
-    F --> P[Panic Tx<br/>*can be pushed before timelock*]
+    F --> P[Panic Tx *v3*<br/>*can be pushed before timelock*]
     F --> UTXON
 
     %% Panic Tx outputs
