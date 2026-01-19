@@ -3,6 +3,14 @@ const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 const VAULT_PURPOSE = 1073;
 const MIN_RELAY_FEE_RATE = 0.1;
 
+export type BackupType = 'INSCRIPTION' | 'OP_RETURN_TRUC' | 'OP_RETURN_V2';
+export const BACKUP_TYPES: BackupType[] = [
+  'OP_RETURN_TRUC',
+  'OP_RETURN_V2',
+  'INSCRIPTION'
+];
+export const DEFAULT_BACKUP_TYPE: BackupType = 'OP_RETURN_TRUC';
+
 const VAULT_OUTPUT_INDEX = 0;
 const BACKOUT_OUTPUT_INDEX = 1;
 
@@ -229,10 +237,7 @@ const coinselectVaultUtxosData = ({
   };
 };
 
-const getBackupCost = (
-  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION',
-  feeRate: number
-) => {
+const getBackupCost = (backupType: BackupType, feeRate: number) => {
   if (backupType === 'INSCRIPTION')
     return Math.ceil(Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate);
   if (backupType === 'OP_RETURN_TRUC' || backupType === 'OP_RETURN_V2')
@@ -264,14 +269,14 @@ export const getVaultContext = ({
   randomMasterNode: BIP32Interface;
   changeDescriptorWithIndex: { descriptor: string; index: number };
   vaultIndex: number;
-  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
+  backupType: BackupType;
   feeRate: number;
   vaultedAmount: number | 'MAX_FUNDS';
   utxosData: UtxosData;
   shiftFeesToBackupEnd?: boolean;
   network: Network;
 }) => {
-  const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`; //FIXME: can 84 be assumed here?
+  const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`;
   const randomKeyPath = `/0/0`;
   const randomKey = keyExpressionBIP32({
     masterNode: randomMasterNode,
@@ -361,7 +366,7 @@ export const createVault = ({
   coldAddress: string;
   changeDescriptorWithIndex: { descriptor: string; index: number };
   vaultIndex: number;
-  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2' | 'INSCRIPTION';
+  backupType: BackupType;
   shiftFeesToBackupEnd?: boolean;
   network: Network;
 }) => {
@@ -518,7 +523,7 @@ export const createOpReturnBackup = ({
   psbtVault: Psbt;
   vaultIndex: number;
   masterNode: BIP32Interface;
-  backupType: 'OP_RETURN_TRUC' | 'OP_RETURN_V2';
+  backupType: Exclude<BackupType, 'INSCRIPTION'>;
   network: Network;
 }) => {
   if (backupType !== 'OP_RETURN_TRUC' && backupType !== 'OP_RETURN_V2')

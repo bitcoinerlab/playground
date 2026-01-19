@@ -16,12 +16,9 @@
 //Package explained: https://github.com/bitcoin/bitcoin/blob/master/doc/policy/packages.md
 //TRUC explained: https://bips.dev/431/
 //guildeline for wallet devs from Sanders: https://bitcoinops.org/en/bitcoin-core-28-wallet-integration-guide/
-
 //core 30 submit package limitations: https://bitcoincore.org/en/doc/30.0.0/rpc/rawtransactions/submitpackage/
-//use op_return instrad of inscriptions? This way we can make sure the backup
-//is processed (as a package) together with the vault: https://bitcoin.stackexchange.com/questions/126208/why-would-anyone-use-op-return-over-inscriptions-aside-from-fees
+//Interesting discussion for OP_RETURN use cases: https://bitcoin.stackexchange.com/questions/126208/why-would-anyone-use-op-return-over-inscriptions-aside-from-fees
 
-//FIXME: https://codesandbox.io/p/sandbox/github/bitcoinerlab/playground/tree/rewind2/descriptors/rewind2?file=%2Findex.ts&from-embed - this will fail
 import './codesandboxFixes';
 import { readFileSync, writeFileSync } from 'fs';
 import {
@@ -39,14 +36,31 @@ import {
   type DiscoveryInstance
 } from '@bitcoinerlab/discovery';
 import { dustThreshold } from '@bitcoinerlab/coinselect';
+import {
+  createExplorerLinks,
+  isWeb,
+  JSONf,
+  Log,
+  pickChoice,
+  renderWebControls,
+  shouldRestartNode,
+  wait
+} from './utils';
 
 //FIXME: this still needs a mechanism to keep some margin for paying anchors
-const BACKUP_TYPE = 'INSCRIPTION';
 const FEE_RATE = 2.0;
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
 const FAUCET_FETCH_DELAY_MS = 1500;
 const SHIFT_FEES_TO_BACKUP_END = true;
+
+const pickBackupType = () =>
+  pickChoice(
+    BACKUP_TYPES,
+    DEFAULT_BACKUP_TYPE,
+    'Pick backup type',
+    'backup-type'
+  );
 
 export const getUtxosData = (
   utxos: Array<string>,
@@ -89,7 +103,7 @@ const getChangeDescriptorWithIndex = (
   };
 };
 
-//const EXPLORER = `https://tape.rewindbitcoin.com/explorer`;
+const EXPLORER_URL = `https://tape.rewindbitcoin.com/explorer`;
 const ESPLORA_API = `https://tape.rewindbitcoin.com/api`;
 const FAUCET_API = `https://tape.rewindbitcoin.com/faucet`;
 const explorer = new EsploraExplorer({ url: ESPLORA_API });
@@ -99,18 +113,23 @@ const { Discovery } = DiscoveryFactory(explorer, network);
 const { wpkhBIP32 } = scriptExpressions;
 const { Output, BIP32 } = DescriptorsFactory(secp256k1);
 
-import { isWeb, JSONf, Log } from './utils';
 import {
   getVaultContext,
   createInscriptionBackup,
   createOpReturnBackup,
   createVault,
   getBackupDescriptor,
+  BACKUP_TYPES,
+  DEFAULT_BACKUP_TYPE,
+  type BackupType,
   type UtxosData
 } from './vaults';
 import { INSCRIPTION_REVEAL_GARBAGE_BYTES } from './vaultSizes';
 
-const start = async () => {
+const { explorerTxLink, explorerAddressLink, explorerBaseLink } =
+  createExplorerLinks(EXPLORER_URL);
+
+const start = async (backupType: BackupType) => {
   await explorer.connect();
   const discovery = new Discovery();
 
@@ -161,7 +180,6 @@ Every reload reuses the same mnemonic for convenience.`);
   ];
   if (!descriptors[0] || !descriptors[1])
     throw new Error('Could not derive wallet descriptors');
-  const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   await discovery.fetch({ descriptors });
   const initialHistoryLength = discovery.getHistory({
     descriptors,
@@ -180,7 +198,7 @@ Every reload reuses the same mnemonic for convenience.`);
       descriptors[1]
     ),
     vaultIndex: 0, //Dummmy value is ok just to grab vsize
-    backupType: BACKUP_TYPE,
+    backupType: backupType,
     shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
     network
   });
@@ -194,8 +212,10 @@ Every reload reuses the same mnemonic for convenience.`);
     maxVaultableAmount = 0;
   } else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
 
-  Log(`Backup type: ${BACKUP_TYPE}`);
+  Log(`Backup type: ${backupType}`);
   Log(`The backup will cost: ${vaultMaxFundsContext.backupCost}`);
+  Log(`🔗 Explorer: ${explorerBaseLink()}`);
+
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   Log(`🔍 Wallet UTXOs: ${utxosAndBalance.utxos.length}`);
   Log(`🔍 Wallet max vaultable amount: ${maxVaultableAmount}`);
@@ -212,7 +232,9 @@ Every reload reuses the same mnemonic for convenience.`);
       index: discovery.getNextIndex({ descriptor: descriptors[0] }),
       network
     });
-    formData.append('address', newWalletOutput.getAddress());
+    const newWalletAddress = newWalletOutput.getAddress();
+    Log(`🆕 New wallet address: ${explorerAddressLink(newWalletAddress)}`);
+    formData.append('address', newWalletAddress);
     const faucetRes = await fetch(FAUCET_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -222,8 +244,11 @@ Every reload reuses the same mnemonic for convenience.`);
     if (faucetRes.status !== 200) throw new Error('The faucet failed');
     const faucetJson = await faucetRes.json();
     Log(`🪣 Faucet response: ${JSONf(faucetJson)}`);
+    if (typeof faucetJson.txid === 'string')
+      Log(`🪣 Faucet tx: ${explorerTxLink(faucetJson.txid)}`);
 
     if (faucetJson.ok !== true) throw new Error('The faucet failed');
+
     if (faucetJson.info === 'CACHED')
       throw new Error(
         `Faucet rate-limit: this address has already received sats recently.
@@ -243,40 +268,40 @@ Please retry (max 2 faucet requests per IP/address per minute).`
         await wait(FAUCET_FETCH_DELAY_MS);
       } else Log('⚠️ Faucet transaction not detected yet. Continuing.');
     }
+
+    //re-compute values after coinselect:
+    utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
+    vaultMaxFundsContext = getVaultContext({
+      vaultedAmount: 'MAX_FUNDS',
+      feeRate: FEE_RATE,
+      utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
+      masterNode,
+      randomMasterNode,
+      changeDescriptorWithIndex: getChangeDescriptorWithIndex(
+        discovery,
+        descriptors[1]
+      ),
+      vaultIndex: 0, //Dummmy value is ok just to grab vsize
+      backupType: backupType,
+      shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
+      network
+    });
+    coinselectedVaultMaxFunds = vaultMaxFundsContext.selected;
+    if (typeof coinselectedVaultMaxFunds === 'string') {
+      Log(`The coinselector failed: ${coinselectedVaultMaxFunds}`);
+      maxVaultableAmount = 0;
+    } else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
+
+    if (maxVaultableAmount < minVaultableAmount)
+      throw new Error(
+        `Balance too low after coinselect: vaultable amount ${maxVaultableAmount} below dust threshold ${minVaultableAmount}.`
+      );
+    Log(`🔍 Updated wallet balance: ${utxosAndBalance.balance}`);
+    Log(`🔍 Updated wallet UTXOs: ${utxosAndBalance.utxos.length}`);
+    Log(`🔍 Updated wallet max vaultable amount: ${maxVaultableAmount}`);
   } else Log(`💰 Existing balance detected. Skipping faucet.`);
 
-  //re-compute values after coinselect:
-  utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
-  vaultMaxFundsContext = getVaultContext({
-    vaultedAmount: 'MAX_FUNDS',
-    feeRate: FEE_RATE,
-    utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
-    masterNode,
-    randomMasterNode,
-    changeDescriptorWithIndex: getChangeDescriptorWithIndex(
-      discovery,
-      descriptors[1]
-    ),
-    vaultIndex: 0, //Dummmy value is ok just to grab vsize
-    backupType: BACKUP_TYPE,
-    shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
-    network
-  });
-  coinselectedVaultMaxFunds = vaultMaxFundsContext.selected;
-  if (typeof coinselectedVaultMaxFunds === 'string') {
-    Log(`The coinselector failed: ${coinselectedVaultMaxFunds}`);
-    maxVaultableAmount = 0;
-  } else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
-
-  if (maxVaultableAmount < minVaultableAmount)
-    throw new Error(
-      `Balance too low after coinselect: vaultable amount ${maxVaultableAmount} below dust threshold ${minVaultableAmount}.`
-    );
-
   const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);
-  Log(`🔍 Updated wallet balance: ${utxosAndBalance.balance}`);
-  Log(`🔍 Updated wallet UTXOs: ${utxosAndBalance.utxos.length}`);
-  Log(`🔍 Updated wallet max vaultable amount: ${maxVaultableAmount}`);
 
   const backupDescriptor = getBackupDescriptor({
     masterNode,
@@ -288,6 +313,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     gapLimit: VAULT_GAP_LIMIT
   });
   const vaultIndex = discovery.getNextIndex({ descriptor: backupDescriptor });
+  Log(`🔎 Backup descriptor: ${backupDescriptor}`);
   Log(`🔍 Number of Vaults found: ${vaultIndex}`);
 
   const coldAddress = new Output({
@@ -299,6 +325,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     }),
     network
   }).getAddress();
+  Log(`❄️ Emergency address: ${explorerAddressLink(coldAddress)}`);
   const changeDescriptorWithIndex = getChangeDescriptorWithIndex(
     discovery,
     descriptors[1]
@@ -319,7 +346,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     coldAddress,
     changeDescriptorWithIndex,
     vaultIndex,
-    backupType: BACKUP_TYPE,
+    backupType: backupType,
     shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
     network
   });
@@ -337,18 +364,33 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     0
   );
   const vaultFee = vaultInputValue - vaultOutputValue;
-  Log(`💸 Vault tx fee (pure miner fee paid by the vault tx): ${vaultFee}`);
-  Log(
-    `📦 Backup funding output reserved inside the vault tx: ${vault.backupOutputValue}`
+  const backupFeeShift = Math.max(
+    vault.backupOutputValue - vault.backupCost,
+    0
   );
   Log(
-    `📦 Backup fee estimate (what the backup tx will burn later): ${vault.backupCost}`
+    `💸 Vault tx fee (pure miner fee paid by the vault tx): ${vaultFee} sats${
+      backupFeeShift > 0
+        ? ` (${backupFeeShift} sats shifted into the backup output)`
+        : ''
+    }`
+  );
+  Log(`📦 Fee rate: ${FEE_RATE} sat/vB`);
+  Log(
+    `📦 Backup fee baseline (cost before vault fee shift): ${vault.backupCost} sats`
   );
   Log(
-    `📦 Reveal OP_RETURN padding to avoid tx-size-small errors: ${INSCRIPTION_REVEAL_GARBAGE_BYTES} bytes`
+    `📦 Backup output reserved in vault tx: ${vault.backupOutputValue} sats (${
+      backupFeeShift > 0
+        ? `includes ${backupFeeShift} sats fee shift from vault tx`
+        : 'no fee shift'
+    })`
   );
+  //Log(
+  //  `📦 Reveal OP_RETURN padding to avoid tx-size-small errors: ${INSCRIPTION_REVEAL_GARBAGE_BYTES} bytes`
+  //);
 
-  if (BACKUP_TYPE === 'INSCRIPTION') {
+  if (backupType === 'INSCRIPTION') {
     const inscriptionPsbts = createInscriptionBackup({
       vaultIndex,
       feeRate: FEE_RATE,
@@ -367,10 +409,11 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     await explorer.push(revealTx.toHex());
 
     Log(`
- vault tx id: ${vaultTx.getId()}
- commit tx id: ${commitTx.getId()}
- reveal tx id: ${revealTx.getId()}
- trigger tx id: ${psbtTrigger.extractTransaction().getId()}
+ vault tx id: ${explorerTxLink(vaultTx.getId())}
+ commit tx id: ${explorerTxLink(commitTx.getId())}
+ reveal tx id: ${explorerTxLink(revealTx.getId())}
+ trigger tx id: ${explorerTxLink(psbtTrigger.extractTransaction().getId())}
+ panic tx id: ${explorerTxLink(psbtPanic.extractTransaction().getId())}
  `);
   } else {
     const psbtBackup = createOpReturnBackup({
@@ -379,12 +422,12 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       psbtVault,
       vaultIndex,
       masterNode,
-      backupType: BACKUP_TYPE,
+      backupType,
       network
     });
 
     const backupTx = psbtBackup.extractTransaction();
-    if (BACKUP_TYPE === 'OP_RETURN_TRUC') {
+    if (backupType === 'OP_RETURN_TRUC') {
       let firstAttempt = true;
       for (;;) {
         await discovery.fetch({ descriptors });
@@ -430,22 +473,48 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     const pkgRespJson = await pkgRes.json();
     Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
 
+    const txResults = pkgRespJson?.['tx-results'];
+    const txErrors = txResults
+      ? Object.values(txResults)
+          .map(result => (result as { error?: string }).error)
+          .filter(Boolean)
+      : [];
+    if (pkgRespJson?.package_msg !== 'success' || txErrors.length > 0) {
+      const details =
+        txErrors.length > 0 ? ` Errors: ${txErrors.join('; ')}` : '';
+      throw new Error(`Package submit failed.${details}`);
+    }
+
     Log(`
- vault tx id: ${vaultTx.getId()}
- backup tx id: ${backupTx.getId()}
- trigger tx id: ${psbtTrigger.extractTransaction().getId()}
+ vault tx id: ${explorerTxLink(vaultTx.getId())}
+ backup tx id: ${explorerTxLink(backupTx.getId())}
+ trigger tx id: ${explorerTxLink(psbtTrigger.extractTransaction().getId())}
+ panic tx id: ${explorerTxLink(psbtPanic.extractTransaction().getId())}
  `);
   }
 
   explorer.close();
 };
-if (isWeb) (window as unknown as { start: typeof start }).start = start;
+
+const startNode = async () => {
+  for (;;) {
+    const backupType = await pickBackupType();
+    await start(backupType);
+    const restart = await shouldRestartNode();
+    if (!restart) break;
+  }
+};
 
 if (isWeb) {
-  document.body.style.marginBottom = '60px'; //prevent CodeSandbox UI from overlapping the logs
-  document.body.innerHTML = `
-<div id="logs" style="white-space: pre-wrap;font-family: monospace;">
-  <a href="javascript:start();" id="start">Click to start!</a>
-</div>
-`;
-} else start();
+  (window as unknown as { start: typeof start }).start = start;
+  renderWebControls({
+    options: BACKUP_TYPES,
+    defaultOption: DEFAULT_BACKUP_TYPE,
+    onRun: async () => {
+      const backupType = await pickBackupType();
+      await start(backupType);
+    }
+  });
+} else {
+  void startNode();
+}
