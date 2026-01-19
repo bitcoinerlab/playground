@@ -11,7 +11,7 @@ Because Rewind 2 is a vault-enabled wallet, this document first refreshes what
 Bitcoin vaults are and then dives into the backup techniques.
 
 The code that accompanies this document can be run by clicking the [**SHOW
-PLAYGROUND**](https://bitcoinerlab.com/guides/onchain-wallet-backup) button on
+PLAYGROUND**](https://bitcoinerlab.com/guides/rewind2) button on
 BitcoinerLAB.com or by [installing and running the code
 locally](https://github.com/bitcoinerlab/playground).
 
