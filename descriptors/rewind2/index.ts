@@ -47,7 +47,8 @@ import {
   wait
 } from './utils';
 
-//FIXME: this still needs a mechanism to keep some margin for paying anchors
+// TODO: Add a mechanism to keep a balance margin for paying anchor fees.
+// TODO: Payload encryption.
 const FEE_RATE = 2.0;
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
