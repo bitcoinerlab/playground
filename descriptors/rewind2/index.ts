@@ -174,11 +174,11 @@ const logPackageResult = async ({
   if (packageMsg !== 'success' || txErrors.length > 0) {
     const details =
       txErrors.length > 0 ? ` Errors: ${txErrors.join('; ')}` : '';
-    Log(`⚠️ Package submit failed: ${packageMsg}.${details}`);
     if (txErrors.some(error => error.includes('TRUC-violation')))
       Log(
-        `⚠️ TRUC policy requires parent inputs to be confirmed before relaying. Tape mines every 10 minutes on the dot; wait for confirmations and retry.`
+        `⚠️ Package submit failed: TRUC policy requires parent inputs to be confirmed before relaying. Tape mines blocks every 10 minutes on the dot; wait for confirmations and retry.`
       );
+    else Log(`⚠️ Package submit failed: ${packageMsg}.${details}`);
     return false;
   }
   Log(`✅ Package submit successful.`);
@@ -509,6 +509,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     vault.backupOutputValue - vault.backupCost,
     0
   );
+  Log(`📦 Fee rate: ${FEE_RATE} sat/vB`);
   Log(
     `💸 Vault tx fee (pure miner fee paid by the vault tx): ${vaultFee} sats${
       backupFeeShift > 0
@@ -516,12 +517,11 @@ Please retry (max 2 faucet requests per IP/address per minute).`
         : ''
     }`
   );
-  Log(`📦 Fee rate: ${FEE_RATE} sat/vB`);
   Log(
     `📦 Backup fee baseline (cost before vault fee shift): ${vault.backupCost} sats`
   );
   Log(
-    `📦 Backup output reserved in vault tx: ${vault.backupOutputValue} sats (${
+    `📦 Backup output value reserved in vault tx: ${vault.backupOutputValue} sats (${
       backupFeeShift > 0
         ? `includes ${backupFeeShift} sats fee shift from vault tx`
         : 'no fee shift'
@@ -584,7 +584,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
           Log(`
 
 ⛓️ TRUC rules require vault funding UTXOs to be confirmed.
-⏳ Tape mines every 10 minutes on the dot. Waiting for ${pendingUtxos.length} UTXO(s) to confirm...`);
+⏳ Tape mines blocks every 10 minutes on the dot. Waiting for ${pendingUtxos.length} UTXO(s) to confirm...`);
         else
           Log(
             `⏳ Still waiting for ${pendingUtxos.length} UTXO(s) to confirm...`
@@ -593,7 +593,9 @@ Please retry (max 2 faucet requests per IP/address per minute).`
         firstAttempt = false;
       }
     }
-    Log(`📦 Submitting vault + backup as a package...`);
+    Log(
+      `📦 Submitting vault + backup as a package (vault tx pays most of the fee via CPFP)...`
+    );
     const pkgUrl = `${ESPLORA_API}/txs/package`;
     const pkgRes = await fetch(pkgUrl, {
       method: 'POST',
