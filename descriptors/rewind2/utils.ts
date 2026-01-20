@@ -142,10 +142,9 @@ export const renderWebControls = <T extends string>({
  </div>
  `;
   document.body.innerHTML = `
+ <div id="logs" style="white-space: pre-wrap;font-family: monospace;"></div>
 ${renderActionButtons(true)}
-<div id="logs" style="white-space: pre-wrap;font-family: monospace;"></div>
-${renderActionButtons(false)}
-`;
+ `;
   const startButtons = Array.from(
     document.querySelectorAll('[data-action="start"]')
   ) as HTMLButtonElement[];
