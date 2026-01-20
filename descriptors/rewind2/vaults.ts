@@ -5,11 +5,11 @@ const MIN_RELAY_FEE_RATE = 0.1;
 
 export type BackupType = 'INSCRIPTION' | 'OP_RETURN_TRUC' | 'OP_RETURN_V2';
 export const BACKUP_TYPES: BackupType[] = [
-  'OP_RETURN_TRUC',
   'OP_RETURN_V2',
+  'OP_RETURN_TRUC',
   'INSCRIPTION'
 ];
-export const DEFAULT_BACKUP_TYPE: BackupType = 'OP_RETURN_TRUC';
+export const DEFAULT_BACKUP_TYPE: BackupType = 'OP_RETURN_V2';
 
 const VAULT_OUTPUT_INDEX = 0;
 const BACKUP_OUTPUT_INDEX = 1;
