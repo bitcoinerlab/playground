@@ -48,7 +48,6 @@ import {
   wait
 } from './utils';
 
-// TODO: Payload encryption.
 const FEE_RATE = 2.0;
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
@@ -534,7 +533,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   );
 
   if (backupType === 'INSCRIPTION') {
-    const inscriptionPsbts = createInscriptionBackup({
+    const inscriptionPsbts = await createInscriptionBackup({
       vaultIndex,
       feeRate: FEE_RATE,
       psbtTrigger,
@@ -559,7 +558,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
  panic tx id: ${explorerTxLink(psbtPanic.extractTransaction().getId())}
  `);
   } else {
-    const psbtBackup = createOpReturnBackup({
+    const psbtBackup = await createOpReturnBackup({
       psbtTrigger,
       psbtPanic,
       psbtVault,

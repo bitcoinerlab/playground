@@ -52,6 +52,7 @@ import type { BIP32Interface } from 'bip32';
 import { encode as encodeVarInt, encodingLength } from 'varuint-bitcoin';
 import { compilePolicy } from '@bitcoinerlab/miniscript';
 import { InscriptionsFactory } from './inscriptions';
+import { getManagedChacha, getSeedDerivedCipherKey } from './cipher';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { coinselect, dustThreshold, maxFunds } from '@bitcoinerlab/coinselect';
 const { Inscription } = InscriptionsFactory(secp256k1);
@@ -110,6 +111,28 @@ const serializeVaultEntry = ({
     encVI(panicTx.length),
     panicTx
   ]);
+};
+
+const buildEncryptedVaultContent = async ({
+  triggerTx,
+  panicTx,
+  masterNode,
+  network,
+  vaultIndex
+}: {
+  triggerTx: Buffer;
+  panicTx: Buffer;
+  masterNode: BIP32Interface;
+  network: Network;
+  vaultIndex: number;
+}) => {
+  const entry = serializeVaultEntry({ triggerTx, panicTx });
+  const header = Buffer.from('REW'); // Magic
+  const vaultPath = `m${getVaultOriginPath(network)}/${vaultIndex}`;
+  const cipherKey = await getSeedDerivedCipherKey({ vaultPath, masterNode });
+  const cipher = await getManagedChacha(cipherKey);
+  const encryptedEntry = Buffer.from(cipher.encrypt(entry));
+  return Buffer.concat([header, encryptedEntry]);
 };
 
 const createTriggerDescriptor = ({
@@ -587,7 +610,7 @@ export const createVault = ({
   };
 };
 
-export const createOpReturnBackup = ({
+export const createOpReturnBackup = async ({
   psbtTrigger,
   psbtPanic,
   psbtVault,
@@ -614,12 +637,13 @@ export const createOpReturnBackup = ({
     network
   });
 
-  const entry = serializeVaultEntry({
+  const content = await buildEncryptedVaultContent({
     triggerTx,
-    panicTx
+    panicTx,
+    masterNode,
+    network,
+    vaultIndex
   });
-  const header = Buffer.from('REW'); // Magic
-  const content = Buffer.concat([header, entry]);
 
   const psbtBackup = new Psbt({ network }); // Use same network
   psbtBackup.setVersion(backupType === 'OP_RETURN_TRUC' ? 3 : 2);
@@ -648,7 +672,7 @@ export const createOpReturnBackup = ({
   return psbtBackup;
 };
 
-export const createInscriptionBackup = ({
+export const createInscriptionBackup = async ({
   vaultIndex,
   feeRate,
   masterNode,
@@ -671,12 +695,13 @@ export const createInscriptionBackup = ({
   const panicTx = psbtPanic.extractTransaction().toBuffer();
   const vaultTx = psbtVault.extractTransaction();
 
-  const entry = serializeVaultEntry({
+  const content = await buildEncryptedVaultContent({
     triggerTx,
-    panicTx
+    panicTx,
+    masterNode,
+    network,
+    vaultIndex
   });
-  const header = Buffer.from('REW'); // Magic
-  const content = Buffer.concat([header, entry]);
 
   const commitPath = getInscriptionCommitOutputBackupPath(network, vaultIndex);
   const commitNode = masterNode.derivePath(commitPath);

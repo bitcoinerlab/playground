@@ -272,9 +272,8 @@ the wallet attach a child transaction later to bump the effective feerate via
 CPFP, without changing the pre‑signed tx. This keeps the pre‑signed path valid
 while still allowing fee adjustment when it's actually needed.
 
-In practice, the trigger/panic are broadcast as pre-signed 0-fee parents. A
-CPFP child spends the P2A anchor and pays the full fee, pulling both into the
-block.
+In practice, the trigger/panic are broadcast as pre-signed 0-fee parents. A CPFP
+child spends the P2A anchor and pays the full fee, pulling both into the block.
 
 ### Anchor Reserve Funding
 
@@ -310,4 +309,8 @@ recommended flow and keeps the demo path intuitive.
 
 ### Backup Encryption
 
-WIP
+The backup payload is encrypted with XChaCha20-Poly1305. The `REW` magic header
+remains plaintext, and the ciphertext includes the 24-byte nonce and 16-byte
+authentication tag. The cipher key is deterministically derived from the wallet
+seed using the vault path (`m/1073'/<network>'/0'/<index>`) via
+`getSeedDerivedCipherKey`, and the AAD is fixed to `Rewind Bitcoin`.
