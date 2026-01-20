@@ -235,6 +235,9 @@ const pushParentWithCpfp = async (label: 'trigger' | 'panic') => {
   if (cpfp.warning) Log(`⚠️ ${cpfp.warning}`);
 
   Log(`📦 Pushing ${label} + CPFP child...`);
+  Log(
+    `✨ Magic: the ${label} is a pre-signed 0-fee parent, and the child spends the P2A anchor to pay the full fee via CPFP, pulling both into the block.`
+  );
   const pkgUrl = `${ESPLORA_API}/txs/package`;
   const pkgRes = await fetch(pkgUrl, {
     method: 'POST',
