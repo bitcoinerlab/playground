@@ -163,6 +163,8 @@ ${renderActionControls()}
   const run = async () => {
     const logs = document.getElementById('logs');
     if (logs) logs.innerHTML = '';
+    if (startControls) startControls.style.display = 'none';
+    if (actionControls) actionControls.style.display = '';
     if (startButton) startButton.disabled = true;
     if (restartButton) restartButton.disabled = true;
     if (pushTriggerButton) pushTriggerButton.disabled = true;
@@ -173,12 +175,14 @@ ${renderActionControls()}
       runSucceeded = true;
     } finally {
       if (runSucceeded) {
-        if (startControls) startControls.style.display = 'none';
-        if (actionControls) actionControls.style.display = '';
         if (restartButton) restartButton.disabled = false;
         if (pushTriggerButton) pushTriggerButton.disabled = false;
         if (pushPanicButton) pushPanicButton.disabled = false;
-      } else if (startButton) startButton.disabled = false;
+      } else {
+        if (actionControls) actionControls.style.display = 'none';
+        if (startControls) startControls.style.display = '';
+        if (startButton) startButton.disabled = false;
+      }
     }
   };
   startButton?.addEventListener('click', () => {
