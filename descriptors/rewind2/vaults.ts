@@ -274,6 +274,13 @@ const getBackupCost = (backupType: BackupType, feeRate: number) => {
   throw new Error('backupCost unset');
 };
 
+const getUtxosValue = (utxosData: UtxosData) =>
+  utxosData.reduce((sum, utxo) => {
+    const out = utxo.tx.outs[utxo.vout];
+    if (!out) throw new Error('Invalid utxo');
+    return sum + out.value;
+  }, 0);
+
 /**
  * Builds deterministic vault outputs and runs coin selection for them.
  *
@@ -739,4 +746,88 @@ export const createInscriptionBackup = ({
     throw new Error(`Unexpected inscription commit vsize: ${commitVsize}`);
 
   return { psbtCommit, psbtReveal };
+};
+
+export const createP2ACpfpChild = ({
+  parentTx,
+  parentVsize,
+  anchorReserveUtxosData,
+  anchorReserveOutput,
+  masterNode,
+  feeRate,
+  network
+}: {
+  parentTx: Transaction;
+  parentVsize: number;
+  anchorReserveUtxosData: UtxosData;
+  anchorReserveOutput: OutputInstance;
+  masterNode: BIP32Interface;
+  feeRate: number;
+  network: Network;
+}):
+  | {
+      psbt: Psbt;
+      tx: Transaction;
+      childVsize: number;
+      targetFee: number;
+      outputValue: number;
+      reserveValue: number;
+      warning?: string;
+    }
+  | string => {
+  if (!anchorReserveUtxosData.length) return 'NO_ANCHOR_RESERVE_UTXOS';
+  const reserveValue = getUtxosValue(anchorReserveUtxosData);
+
+  const buildChild = (outputValue: number) => {
+    const psbt = new Psbt({ network });
+    psbt.setVersion(3);
+    psbt.addInput({
+      hash: parentTx.getId(),
+      index: 0,
+      witnessUtxo: { script: P2A_SCRIPT, value: 0 }
+    });
+    const anchorInputFinalizers = anchorReserveUtxosData.map(utxo =>
+      utxo.output.updatePsbtAsInput({
+        psbt,
+        txHex: utxo.txHex,
+        vout: utxo.vout
+      })
+    );
+    anchorReserveOutput.updatePsbtAsOutput({ psbt, value: outputValue });
+    signers.signBIP32({ psbt, masterNode });
+    psbt.finalizeInput(0, () => ({
+      finalScriptSig: Buffer.alloc(0),
+      finalScriptWitness: Buffer.from([0x00])
+    }));
+    anchorInputFinalizers.forEach(finalizer => finalizer({ psbt }));
+    const tx = psbt.extractTransaction();
+    return { psbt, tx, vsize: tx.virtualSize() };
+  };
+
+  const provisional = buildChild(reserveValue);
+  const targetFee = Math.ceil((parentVsize + provisional.vsize) * feeRate);
+  const outputValue = reserveValue - targetFee;
+  const dust = dustThreshold(anchorReserveOutput);
+  if (outputValue <= dust)
+    return `ANCHOR_CHANGE_BELOW_DUST: ${Math.max(outputValue, 0)} <= ${dust}`;
+  const warningMessages = [];
+  if (reserveValue < targetFee)
+    warningMessages.push(
+      `Anchor reserve (${reserveValue} sats) is below target fee (${targetFee} sats).`
+    );
+  const finalValue = Math.max(0, outputValue);
+  const finalChild = buildChild(finalValue);
+  const warning = warningMessages.length
+    ? warningMessages.join(' ')
+    : undefined;
+
+  return {
+    psbt: finalChild.psbt,
+    tx: finalChild.tx,
+    childVsize: finalChild.vsize,
+    targetFee,
+    outputValue: finalValue,
+    reserveValue,
+    ...(warning ? { warning } : {})
+  };
 };

@@ -88,18 +88,26 @@ type RenderWebControlsOptions<T extends string> = {
   options: readonly T[];
   defaultOption: T;
   onRun: () => Promise<void>;
+  onPushTrigger?: () => Promise<void>;
+  onPushPanic?: () => Promise<void>;
   selectId?: string;
   startLabel?: string;
   restartLabel?: string;
+  pushTriggerLabel?: string;
+  pushPanicLabel?: string;
 };
 
 export const renderWebControls = <T extends string>({
   options,
   defaultOption,
   onRun,
+  onPushTrigger,
+  onPushPanic,
   selectId = 'backup-type',
   startLabel = 'Start playground',
-  restartLabel = 'Restart'
+  restartLabel = 'Restart',
+  pushTriggerLabel = 'Push trigger',
+  pushPanicLabel = 'Push panic'
 }: RenderWebControlsOptions<T>) => {
   document.body.style.marginBottom = '60px'; //prevent CodeSandbox UI from overlapping the logs
   document.body.innerHTML = `
@@ -117,6 +125,16 @@ export const renderWebControls = <T extends string>({
   </select>
   <button id="start">${startLabel}</button>
   <button id="restart" style="margin-left: 6px;" disabled>${restartLabel}</button>
+  ${
+    onPushTrigger
+      ? `<button id="push-trigger" style="margin-left: 6px;" disabled>${pushTriggerLabel}</button>`
+      : ''
+  }
+  ${
+    onPushPanic
+      ? `<button id="push-panic" style="margin-left: 6px;" disabled>${pushPanicLabel}</button>`
+      : ''
+  }
 </div>
 <div id="logs" style="white-space: pre-wrap;font-family: monospace;"></div>
 `;
@@ -126,13 +144,23 @@ export const renderWebControls = <T extends string>({
   const restartButton = document.getElementById(
     'restart'
   ) as HTMLButtonElement | null;
+  const pushTriggerButton = document.getElementById(
+    'push-trigger'
+  ) as HTMLButtonElement | null;
+  const pushPanicButton = document.getElementById(
+    'push-panic'
+  ) as HTMLButtonElement | null;
   const run = async () => {
     const logs = document.getElementById('logs');
     if (logs) logs.innerHTML = '';
     if (startButton) startButton.disabled = true;
     if (restartButton) restartButton.disabled = true;
+    if (pushTriggerButton) pushTriggerButton.disabled = true;
+    if (pushPanicButton) pushPanicButton.disabled = true;
     try {
       await onRun();
+      if (pushTriggerButton) pushTriggerButton.disabled = false;
+      if (pushPanicButton) pushPanicButton.disabled = false;
     } finally {
       if (startButton) startButton.disabled = false;
       if (restartButton) restartButton.disabled = false;
@@ -144,4 +172,31 @@ export const renderWebControls = <T extends string>({
   restartButton?.addEventListener('click', () => {
     void run();
   });
+  pushTriggerButton?.addEventListener('click', () => {
+    void onPushTrigger?.();
+  });
+  pushPanicButton?.addEventListener('click', () => {
+    void onPushPanic?.();
+  });
+};
+
+export const promptNodeChoice = async <T extends string>({
+  options,
+  fallback,
+  promptLabel
+}: {
+  options: readonly T[];
+  fallback: T;
+  promptLabel: string;
+}): Promise<T> => {
+  if (isWeb) return fallback;
+  const defaultIndex = Math.max(options.indexOf(fallback), 0);
+  const optionsText = options
+    .map((option, index) => `${index + 1}=${option}`)
+    .join(', ');
+  const answer = await promptNode(
+    `${promptLabel} (${optionsText}) [${defaultIndex + 1}]: `
+  );
+  const normalized = answer || String(defaultIndex + 1);
+  return parseChoice(normalized, options, fallback);
 };
