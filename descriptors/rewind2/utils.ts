@@ -110,11 +110,9 @@ export const renderWebControls = <T extends string>({
   pushPanicLabel = 'Push panic'
 }: RenderWebControlsOptions<T>) => {
   document.body.style.marginBottom = '60px'; //prevent CodeSandbox UI from overlapping the logs
-  const renderActionButtons = (withSelect: boolean) => `
- <div style="font-family: monospace; margin-bottom: 12px;">
-   ${
-     withSelect
-       ? `<label for="${selectId}">Backup type:</label>
+  const renderStartControls = () => `
+ <div id="start-controls" style="font-family: monospace; margin-bottom: 12px;">
+   <label for="${selectId}">Backup type:</label>
    <select id="${selectId}" style="margin-left: 8px;">
      ${options
        .map(
@@ -124,90 +122,76 @@ export const renderWebControls = <T extends string>({
            }>${option}</option>`
        )
        .join('')}
-   </select>`
-       : '<span>Actions:</span>'
-   }
-   <button data-action="start">${startLabel}</button>
-   <button data-action="restart" style="margin-left: 6px;" disabled>${restartLabel}</button>
+   </select>
+   <button id="start">${startLabel}</button>
+ </div>
+ `;
+  const renderActionControls = () => `
+ <div id="action-controls" style="font-family: monospace; margin-bottom: 12px; display: none;">
    ${
      onPushTrigger
-       ? `<button data-action="push-trigger" style="margin-left: 6px;" disabled>${pushTriggerLabel}</button>`
+       ? `<button id="push-trigger" disabled>${pushTriggerLabel}</button>`
        : ''
    }
    ${
      onPushPanic
-       ? `<button data-action="push-panic" style="margin-left: 6px;" disabled>${pushPanicLabel}</button>`
+       ? `<button id="push-panic" style="margin-left: 6px;" disabled>${pushPanicLabel}</button>`
        : ''
    }
+   <button id="restart" style="margin-left: 6px;" disabled>${restartLabel}</button>
  </div>
  `;
   document.body.innerHTML = `
  <div id="logs" style="white-space: pre-wrap;font-family: monospace;"></div>
-${renderActionButtons(true)}
+${renderStartControls()}
+${renderActionControls()}
  `;
-  const startButtons = Array.from(
-    document.querySelectorAll('[data-action="start"]')
-  ) as HTMLButtonElement[];
-  const restartButtons = Array.from(
-    document.querySelectorAll('[data-action="restart"]')
-  ) as HTMLButtonElement[];
-  const pushTriggerButtons = Array.from(
-    document.querySelectorAll('[data-action="push-trigger"]')
-  ) as HTMLButtonElement[];
-  const pushPanicButtons = Array.from(
-    document.querySelectorAll('[data-action="push-panic"]')
-  ) as HTMLButtonElement[];
+  const startControls = document.getElementById('start-controls');
+  const actionControls = document.getElementById('action-controls');
+  const startButton = document.getElementById(
+    'start'
+  ) as HTMLButtonElement | null;
+  const restartButton = document.getElementById(
+    'restart'
+  ) as HTMLButtonElement | null;
+  const pushTriggerButton = document.getElementById(
+    'push-trigger'
+  ) as HTMLButtonElement | null;
+  const pushPanicButton = document.getElementById(
+    'push-panic'
+  ) as HTMLButtonElement | null;
   const run = async () => {
     const logs = document.getElementById('logs');
     if (logs) logs.innerHTML = '';
-    startButtons.forEach(button => {
-      button.disabled = true;
-    });
-    restartButtons.forEach(button => {
-      button.disabled = true;
-    });
-    pushTriggerButtons.forEach(button => {
-      button.disabled = true;
-    });
-    pushPanicButtons.forEach(button => {
-      button.disabled = true;
-    });
+    if (startButton) startButton.disabled = true;
+    if (restartButton) restartButton.disabled = true;
+    if (pushTriggerButton) pushTriggerButton.disabled = true;
+    if (pushPanicButton) pushPanicButton.disabled = true;
+    let runSucceeded = false;
     try {
       await onRun();
-      pushTriggerButtons.forEach(button => {
-        button.disabled = false;
-      });
-      pushPanicButtons.forEach(button => {
-        button.disabled = false;
-      });
+      runSucceeded = true;
     } finally {
-      startButtons.forEach(button => {
-        button.disabled = false;
-      });
-      restartButtons.forEach(button => {
-        button.disabled = false;
-      });
+      if (runSucceeded) {
+        if (startControls) startControls.style.display = 'none';
+        if (actionControls) actionControls.style.display = '';
+        if (restartButton) restartButton.disabled = false;
+        if (pushTriggerButton) pushTriggerButton.disabled = false;
+        if (pushPanicButton) pushPanicButton.disabled = false;
+      } else if (startButton) startButton.disabled = false;
     }
   };
-  startButtons.forEach(button => {
-    button.addEventListener('click', () => {
-      void run();
-    });
+  startButton?.addEventListener('click', () => {
+    void run();
   });
-  restartButtons.forEach(button => {
-    button.addEventListener('click', () => {
-      void run();
-    });
+  restartButton?.addEventListener('click', () => {
+    void run();
   });
-  pushTriggerButtons.forEach(button => {
-    button.addEventListener('click', () => {
-      void onPushTrigger?.();
-    });
+  pushTriggerButton?.addEventListener('click', () => {
+    void onPushTrigger?.();
   });
-  pushPanicButtons.forEach(button => {
-    button.addEventListener('click', () => {
-      void onPushPanic?.();
-    });
+  pushPanicButton?.addEventListener('click', () => {
+    void onPushPanic?.();
   });
 };
 
