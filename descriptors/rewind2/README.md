@@ -61,6 +61,9 @@ mnemonic alone.
 Below are the three on-chain backup approaches Rewind 2 evaluates, with their
 tradeoffs and policy constraints.
 
+The playground defaults to **OP_RETURN + v2** because it avoids TRUC confirmation
+constraints and is faster to demo on test networks.
+
 ### OP_RETURN + TRUC
 
 TRUC is a newer relay policy (active since Bitcoin Core 28) that lets you submit
@@ -269,6 +272,16 @@ the wallet attach a child transaction later to bump the effective feerate via
 CPFP, without changing the pre‑signed tx. This keeps the pre‑signed path valid
 while still allowing fee adjustment when it's actually needed.
 
+In practice, the trigger/panic are broadcast as pre-signed 0-fee parents. A
+CPFP child spends the P2A anchor and pays the full fee, pulling both into the
+block.
+
+### Anchor Reserve Funding
+
+The playground reserves a small balance specifically for CPFP fee bumps. It is
+funded from a dedicated wallet branch (`/2/*`) so the wallet always has an
+available UTXO to spend into the CPFP child.
+
 ### Vault Output Ordering
 
 The vault transaction uses deterministic output ordering so the wallet can
@@ -276,6 +289,8 @@ identify vaults and enumerate how many exist.
 
 - Output 0: The output that feeds the trigger transaction.
 - Output 1: A deterministic vault marker output used to fund the backup.
+- Output 2: Optional anchor reserve output for P2A fee bumping.
+- Output 3: Change output, when needed.
 
 Each vault uses a unique index derived from the wallet seed. The marker output
 is sent to a pubkey derived from the path `m/1073'/<network>'/0'/<index>`, where
@@ -286,6 +301,12 @@ To create a new vault, the wallet scans these indices, detects which ones are
 already used and selects the next unused index. This lets the wallet discover
 and count all vaults just by checking which deterministic vault paths have been
 used, without any extra metadata.
+
+### Playground Actions
+
+In the playground UI/CLI, panic is only enabled after a successful trigger push
+because the panic transaction spends the trigger's output. This mirrors the
+recommended flow and keeps the demo path intuitive.
 
 ### Backup Encryption
 
