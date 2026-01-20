@@ -82,13 +82,21 @@ Learn how to construct a **P2A (Pay-to-Anchor)** output and how these outputs ar
 
 ```bash
 npm run descriptors/p2a
+```
 
 ### `descriptors/inscriptions`
 
+Learn how Taproot inscriptions can be built and signed as a stand-alone playground.
+
 ```bash
 npm run descriptors/inscriptions
+```
 
 ### `descriptors/rewind2`
+
+**Guide**: [https://bitcoinerlab.com/guides/rewind2](https://bitcoinerlab.com/guides/rewind2)
+
+Explore Rewind v2 vault flows, 0-fee TRUC trigger/panic with P2A fee bumping, and on-chain backup strategies (OP_RETURN/TRUC, v2, and inscriptions).
 
 ```bash
 npm run descriptors/rewind2

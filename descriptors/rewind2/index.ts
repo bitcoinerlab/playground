@@ -27,7 +27,7 @@ import {
   scriptExpressions
 } from '@bitcoinerlab/descriptors';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
-import { networks, type Network } from 'bitcoinjs-lib';
+import { networks, type Network, type Psbt } from 'bitcoinjs-lib';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { EsploraExplorer } from '@bitcoinerlab/explorer';
 import {
@@ -36,24 +36,25 @@ import {
   type DiscoveryInstance
 } from '@bitcoinerlab/discovery';
 import { dustThreshold } from '@bitcoinerlab/coinselect';
+import type { BIP32Interface } from 'bip32';
 import {
   createExplorerLinks,
   isWeb,
   JSONf,
   Log,
   pickChoice,
+  promptNodeChoice,
   renderWebControls,
-  shouldRestartNode,
   wait
 } from './utils';
 
-// TODO: Add a mechanism to keep a balance margin for paying anchor fees.
 // TODO: Payload encryption.
 const FEE_RATE = 2.0;
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
 const FAUCET_FETCH_DELAY_MS = 1500;
 const SHIFT_FEES_TO_BACKUP_END = true;
+const ANCHOR_FEE_RESERVE_SATS = 10000;
 
 const pickBackupType = () =>
   pickChoice(
@@ -88,19 +89,13 @@ export const getUtxosData = (
   });
 };
 
-const getChangeDescriptorWithIndex = (
+const getDescriptorWithIndex = (
   discovery: DiscoveryInstance,
-  fallbackDescriptor: string
+  descriptor: string
 ) => {
-  const accounts = discovery.getUsedAccounts();
-  const mainAccount = accounts[0];
-  const changeDescriptor = mainAccount
-    ? mainAccount.replace(/\/0\/\*/g, '/1/*')
-    : fallbackDescriptor;
-  if (!changeDescriptor) throw new Error('Missing change descriptor');
   return {
-    descriptor: changeDescriptor,
-    index: discovery.getNextIndex({ descriptor: changeDescriptor })
+    descriptor,
+    index: discovery.getNextIndex({ descriptor })
   };
 };
 
@@ -119,16 +114,143 @@ import {
   createInscriptionBackup,
   createOpReturnBackup,
   createVault,
+  createP2ACpfpChild,
   getBackupDescriptor,
   BACKUP_TYPES,
   DEFAULT_BACKUP_TYPE,
   type BackupType,
   type UtxosData
 } from './vaults';
-import { INSCRIPTION_REVEAL_GARBAGE_BYTES } from './vaultSizes';
 
 const { explorerTxLink, explorerAddressLink, explorerBaseLink } =
   createExplorerLinks(EXPLORER_URL);
+
+type VaultState = {
+  psbtTrigger: Psbt;
+  psbtPanic: Psbt;
+  psbtVault: Psbt;
+  masterNode: BIP32Interface;
+  discovery: DiscoveryInstance;
+  anchorReserveDescriptor: string;
+};
+
+let vaultState: VaultState | null = null;
+
+const getPackageErrors = (pkgRespJson: Record<string, unknown>) => {
+  const txResults = pkgRespJson?.['tx-results'];
+  const txErrors = txResults
+    ? Object.values(txResults as Record<string, { error?: string }>)
+        .map(result => result.error)
+        .filter((error): error is string => Boolean(error))
+    : [];
+  return {
+    packageMsg: pkgRespJson?.['package_msg'],
+    txErrors
+  };
+};
+
+const logPackageResult = async ({
+  pkgRes,
+  parentTxId,
+  childTxId
+}: {
+  pkgRes: Response;
+  parentTxId: string;
+  childTxId: string;
+}) => {
+  if (pkgRes.status === 404) {
+    Log(
+      `⚠️ Package endpoint not available. Your Esplora instance likely doesn't support /txs/package`
+    );
+    return false;
+  }
+  if (!pkgRes.ok) {
+    const errText = await pkgRes.text();
+    Log(`⚠️ Package submit failed: ${errText}`);
+    return false;
+  }
+  const pkgRespJson = (await pkgRes.json()) as Record<string, unknown>;
+  const { packageMsg, txErrors } = getPackageErrors(pkgRespJson);
+  if (packageMsg !== 'success' || txErrors.length > 0) {
+    const details =
+      txErrors.length > 0 ? ` Errors: ${txErrors.join('; ')}` : '';
+    if (txErrors.some(error => error.includes('TRUC-violation')))
+      Log(
+        `⚠️ Package submit failed: TRUC policy requires parent inputs to be confirmed before relaying. Tape mines blocks every 10 minutes on the dot; wait a bit for confirmation and retry.`
+      );
+    else Log(`⚠️ Package submit failed: ${packageMsg}.${details}`);
+    return false;
+  }
+  Log(`✅ Package submit successful.`);
+  Log(
+    `
+ parent tx id: ${explorerTxLink(parentTxId)}
+ child tx id: ${explorerTxLink(childTxId)}
+ `
+  );
+  return true;
+};
+
+const pushParentWithCpfp = async (label: 'trigger' | 'panic') => {
+  if (!vaultState) {
+    Log(`⚠️ No vault exists yet. Run the playground first.`);
+    return false;
+  }
+  const { psbtTrigger, psbtPanic, masterNode, discovery } = vaultState;
+  const parentPsbt = label === 'trigger' ? psbtTrigger : psbtPanic;
+  const parentTx = parentPsbt.extractTransaction();
+  const parentVsize = parentTx.virtualSize();
+  const parentTxId = parentTx.getId();
+
+  await discovery.fetch({ descriptor: vaultState.anchorReserveDescriptor });
+  const anchorReserveUtxos = discovery.getUtxosAndBalance({
+    descriptor: vaultState.anchorReserveDescriptor
+  });
+  const anchorReserveUtxosData = getUtxosData(
+    anchorReserveUtxos.utxos,
+    network,
+    discovery
+  );
+  const anchorReserveDescriptorWithIndex = getDescriptorWithIndex(
+    discovery,
+    vaultState.anchorReserveDescriptor
+  );
+  const anchorReserveOutput = new Output({
+    ...anchorReserveDescriptorWithIndex,
+    network
+  });
+  const cpfp = createP2ACpfpChild({
+    parentTx,
+    parentVsize,
+    anchorReserveUtxosData,
+    anchorReserveOutput,
+    masterNode,
+    feeRate: FEE_RATE,
+    network
+  });
+  if (typeof cpfp === 'string') {
+    Log(`⚠️ Could not push ${label}: ${cpfp}`);
+    return false;
+  }
+  if (cpfp.warning) Log(`⚠️ ${cpfp.warning}`);
+
+  Log(`📦 Pushing ${label} + CPFP child...`);
+  const pkgUrl = `${ESPLORA_API}/txs/package`;
+  const pkgRes = await fetch(pkgUrl, {
+    method: 'POST',
+    body: JSON.stringify([parentTx.toHex(), cpfp.tx.toHex()])
+  });
+  const packageOk = await logPackageResult({
+    pkgRes,
+    parentTxId,
+    childTxId: cpfp.tx.getId()
+  });
+  if (packageOk)
+    Log(
+      `✨ Magic: the ${label} is a pre-signed 0-fee parent, and the child spends the P2A anchor to pay the full fee via CPFP, pulling both into the block.`
+    );
+  return packageOk;
+};
 
 const start = async (backupType: BackupType) => {
   await explorer.connect();
@@ -179,13 +301,27 @@ Every reload reuses the same mnemonic for convenience.`);
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/*' }),
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/1/*' })
   ];
+  // wpkhBIP32 for keyPath /2/* would throw for non standard key, so genealize:
+  const anchorReserveDescriptor = `wpkh(${keyExpressionBIP32({
+    masterNode,
+    originPath: `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`,
+    keyPath: '/2/*'
+  })})`;
   if (!descriptors[0] || !descriptors[1])
     throw new Error('Could not derive wallet descriptors');
   await discovery.fetch({ descriptors });
+  await discovery.fetch({ descriptor: anchorReserveDescriptor });
+  const anchorReserveDescriptorWithIndex = getDescriptorWithIndex(
+    discovery,
+    anchorReserveDescriptor
+  );
   const initialHistoryLength = discovery.getHistory({
     descriptors,
     txStatus: TxStatus.ALL
   }).length;
+  const anchorReserveUtxos = discovery.getUtxosAndBalance({
+    descriptor: anchorReserveDescriptor
+  });
 
   let utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
   let vaultMaxFundsContext = getVaultContext({
@@ -194,12 +330,17 @@ Every reload reuses the same mnemonic for convenience.`);
     utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
     masterNode,
     randomMasterNode,
-    changeDescriptorWithIndex: getChangeDescriptorWithIndex(
+    //changeDescriptorWithIndex is unused when passing vaultedAmount 'MAX_FUNDS'
+    changeDescriptorWithIndex: getDescriptorWithIndex(
       discovery,
       descriptors[1]
     ),
-    vaultIndex: 0, //Dummmy value is ok just to grab vsize
-    backupType: backupType,
+    anchorReserve: ANCHOR_FEE_RESERVE_SATS,
+    anchorReserveDescriptorWithIndex,
+    //Dummmy 0 value is ok if we just need vaultMaxFundsContext to grab vaule
+    //ranges and costs, not real outputs for building transactions
+    vaultIndex: 0,
+    backupType,
     shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
     network
   });
@@ -208,10 +349,8 @@ Every reload reuses the same mnemonic for convenience.`);
   let coinselectedVaultMaxFunds = vaultMaxFundsContext.selected;
 
   let maxVaultableAmount;
-  if (typeof coinselectedVaultMaxFunds === 'string') {
-    Log(`The coinselector failed: ${coinselectedVaultMaxFunds}`);
-    maxVaultableAmount = 0;
-  } else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
+  if (typeof coinselectedVaultMaxFunds === 'string') maxVaultableAmount = 0;
+  else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
 
   Log(`Backup type: ${backupType}`);
   Log(`The backup will cost: ${vaultMaxFundsContext.backupCost}`);
@@ -220,6 +359,9 @@ Every reload reuses the same mnemonic for convenience.`);
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   Log(`🔍 Wallet UTXOs: ${utxosAndBalance.utxos.length}`);
   Log(`🔍 Wallet max vaultable amount: ${maxVaultableAmount}`);
+  Log(
+    `🔒 Anchor reserve balance: ${anchorReserveUtxos.balance} sats (${anchorReserveUtxos.utxos.length} UTXOs)`
+  );
 
   // Trigger tx pays zero fees, so unvaulted amount equals vaulted amount.
   if (maxVaultableAmount < minVaultableAmount) {
@@ -278,12 +420,14 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
       masterNode,
       randomMasterNode,
-      changeDescriptorWithIndex: getChangeDescriptorWithIndex(
+      changeDescriptorWithIndex: getDescriptorWithIndex(
         discovery,
         descriptors[1]
       ),
+      anchorReserve: ANCHOR_FEE_RESERVE_SATS,
+      anchorReserveDescriptorWithIndex,
       vaultIndex: 0, //Dummmy value is ok just to grab vsize
-      backupType: backupType,
+      backupType,
       shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
       network
     });
@@ -327,10 +471,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     network
   }).getAddress();
   Log(`❄️ Emergency address: ${explorerAddressLink(coldAddress)}`);
-  const changeDescriptorWithIndex = getChangeDescriptorWithIndex(
-    discovery,
-    descriptors[1]
-  );
   const unvaultKey = keyExpressionBIP32({
     masterNode,
     originPath: "/0'",
@@ -345,9 +485,14 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     masterNode,
     randomMasterNode,
     coldAddress,
-    changeDescriptorWithIndex,
+    changeDescriptorWithIndex: getDescriptorWithIndex(
+      discovery,
+      descriptors[1]
+    ),
+    anchorReserve: ANCHOR_FEE_RESERVE_SATS,
+    anchorReserveDescriptorWithIndex,
     vaultIndex,
-    backupType: backupType,
+    backupType,
     shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
     network
   });
@@ -369,6 +514,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     vault.backupOutputValue - vault.backupCost,
     0
   );
+  Log(`📦 Fee rate: ${FEE_RATE} sat/vB`);
   Log(
     `💸 Vault tx fee (pure miner fee paid by the vault tx): ${vaultFee} sats${
       backupFeeShift > 0
@@ -376,20 +522,16 @@ Please retry (max 2 faucet requests per IP/address per minute).`
         : ''
     }`
   );
-  Log(`📦 Fee rate: ${FEE_RATE} sat/vB`);
   Log(
     `📦 Backup fee baseline (cost before vault fee shift): ${vault.backupCost} sats`
   );
   Log(
-    `📦 Backup output reserved in vault tx: ${vault.backupOutputValue} sats (${
+    `📦 Backup output value reserved in vault tx: ${vault.backupOutputValue} sats (${
       backupFeeShift > 0
         ? `includes ${backupFeeShift} sats fee shift from vault tx`
         : 'no fee shift'
     })`
   );
-  //Log(
-  //  `📦 Reveal OP_RETURN padding to avoid tx-size-small errors: ${INSCRIPTION_REVEAL_GARBAGE_BYTES} bytes`
-  //);
 
   if (backupType === 'INSCRIPTION') {
     const inscriptionPsbts = createInscriptionBackup({
@@ -447,7 +589,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
           Log(`
 
 ⛓️ TRUC rules require vault funding UTXOs to be confirmed.
-⏳ Waiting for ${pendingUtxos.length} UTXO(s) to confirm...`);
+⏳ Tape mines blocks every 10 minutes on the dot. Waiting for ${pendingUtxos.length} UTXO(s) to confirm...`);
         else
           Log(
             `⏳ Still waiting for ${pendingUtxos.length} UTXO(s) to confirm...`
@@ -456,35 +598,20 @@ Please retry (max 2 faucet requests per IP/address per minute).`
         firstAttempt = false;
       }
     }
-    Log(`📦 Submitting vault + backup as a package...`);
+    Log(
+      `📦 Submitting vault + backup as a package (vault tx pays most of the fee via CPFP)...`
+    );
     const pkgUrl = `${ESPLORA_API}/txs/package`;
     const pkgRes = await fetch(pkgUrl, {
       method: 'POST',
       body: JSON.stringify([vaultTx.toHex(), backupTx.toHex()])
     });
-    if (pkgRes.status === 404) {
-      throw new Error(
-        `Package endpoint not available at ${pkgUrl}. Your Esplora instance likely doesn't support /txs/package`
-      );
-    }
-    if (!pkgRes.ok) {
-      const errText = await pkgRes.text();
-      throw new Error(`Package submit failed (${pkgRes.status}): ${errText}`);
-    }
-    const pkgRespJson = await pkgRes.json();
-    Log(`📦 Package response: ${JSONf(pkgRespJson)}`);
-
-    const txResults = pkgRespJson?.['tx-results'];
-    const txErrors = txResults
-      ? Object.values(txResults)
-          .map(result => (result as { error?: string }).error)
-          .filter(Boolean)
-      : [];
-    if (pkgRespJson?.package_msg !== 'success' || txErrors.length > 0) {
-      const details =
-        txErrors.length > 0 ? ` Errors: ${txErrors.join('; ')}` : '';
-      throw new Error(`Package submit failed.${details}`);
-    }
+    const packageOk = await logPackageResult({
+      pkgRes,
+      parentTxId: vaultTx.getId(),
+      childTxId: backupTx.getId()
+    });
+    if (!packageOk) throw new Error('Package submit failed.');
 
     Log(`
  vault tx id: ${explorerTxLink(vaultTx.getId())}
@@ -493,17 +620,37 @@ Please retry (max 2 faucet requests per IP/address per minute).`
  panic tx id: ${explorerTxLink(psbtPanic.extractTransaction().getId())}
  `);
   }
-
-  explorer.close();
+  vaultState = {
+    psbtTrigger,
+    psbtPanic,
+    psbtVault,
+    masterNode,
+    discovery,
+    anchorReserveDescriptor
+  };
 };
 
 const startNode = async () => {
+  const backupType = await pickBackupType();
+  await start(backupType);
+  let triggerSuccessfullyPushed = false;
   for (;;) {
-    const backupType = await pickBackupType();
-    await start(backupType);
-    const restart = await shouldRestartNode();
-    if (!restart) break;
+    const options = triggerSuccessfullyPushed
+      ? (['Push panic', 'Exit'] as const)
+      : (['Push trigger/unvault', 'Exit'] as const);
+    const fallback = options[0];
+    const action = await promptNodeChoice({
+      options,
+      fallback,
+      promptLabel: 'Action'
+    });
+    if (action === 'Exit') break;
+    if (action === 'Push trigger/unvault') {
+      triggerSuccessfullyPushed = await pushParentWithCpfp('trigger');
+    }
+    if (action === 'Push panic') await pushParentWithCpfp('panic');
   }
+  explorer.close();
 };
 
 if (isWeb) {
@@ -514,6 +661,12 @@ if (isWeb) {
     onRun: async () => {
       const backupType = await pickBackupType();
       await start(backupType);
+    },
+    onPushTrigger: async () => {
+      return await pushParentWithCpfp('trigger');
+    },
+    onPushPanic: async () => {
+      await pushParentWithCpfp('panic');
     }
   });
 } else {
