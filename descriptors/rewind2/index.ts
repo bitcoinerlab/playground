@@ -176,7 +176,7 @@ const logPackageResult = async ({
       txErrors.length > 0 ? ` Errors: ${txErrors.join('; ')}` : '';
     if (txErrors.some(error => error.includes('TRUC-violation')))
       Log(
-        `⚠️ Package submit failed: TRUC policy requires parent inputs to be confirmed before relaying. Tape mines blocks every 10 minutes on the dot; wait for confirmations and retry.`
+        `⚠️ Package submit failed: TRUC policy requires parent inputs to be confirmed before relaying. Tape mines blocks every 10 minutes on the dot; wait a bit for confirmation and retry.`
       );
     else Log(`⚠️ Package submit failed: ${packageMsg}.${details}`);
     return false;
