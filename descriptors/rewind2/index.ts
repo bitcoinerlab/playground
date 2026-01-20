@@ -27,7 +27,7 @@ import {
   scriptExpressions
 } from '@bitcoinerlab/descriptors';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
-import { networks, type Network, type Psbt } from 'bitcoinjs-lib';
+import { networks, type Network } from 'bitcoinjs-lib';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { EsploraExplorer } from '@bitcoinerlab/explorer';
 import {
@@ -47,6 +47,7 @@ import {
   renderWebControls,
   wait
 } from './utils';
+import { fetchVaultParentsFromBackup } from './backupRecovery';
 
 const FEE_RATE = 2.0;
 const VAULT_GAP_LIMIT = 20;
@@ -125,9 +126,8 @@ const { explorerTxLink, explorerAddressLink, explorerBaseLink } =
   createExplorerLinks(EXPLORER_URL);
 
 type VaultState = {
-  psbtTrigger: Psbt;
-  psbtPanic: Psbt;
-  psbtVault: Psbt;
+  vaultIndex: number;
+  backupDescriptor: string;
   masterNode: BIP32Interface;
   discovery: DiscoveryInstance;
   anchorReserveDescriptor: string;
@@ -195,9 +195,15 @@ const pushParentWithCpfp = async (label: 'trigger' | 'panic') => {
     Log(`⚠️ No vault exists yet. Run the playground first.`);
     return false;
   }
-  const { psbtTrigger, psbtPanic, masterNode, discovery } = vaultState;
-  const parentPsbt = label === 'trigger' ? psbtTrigger : psbtPanic;
-  const parentTx = parentPsbt.extractTransaction();
+  const { masterNode, discovery, backupDescriptor, vaultIndex } = vaultState;
+  const { triggerTx, panicTx } = await fetchVaultParentsFromBackup({
+    vaultIndex,
+    backupDescriptor,
+    masterNode,
+    network,
+    explorer
+  });
+  const parentTx = label === 'trigger' ? triggerTx : panicTx;
   const parentVsize = parentTx.virtualSize();
   const parentTxId = parentTx.getId();
 
@@ -620,9 +626,8 @@ Please retry (max 2 faucet requests per IP/address per minute).`
  `);
   }
   vaultState = {
-    psbtTrigger,
-    psbtPanic,
-    psbtVault,
+    vaultIndex,
+    backupDescriptor,
     masterNode,
     discovery,
     anchorReserveDescriptor
