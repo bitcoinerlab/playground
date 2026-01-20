@@ -88,8 +88,8 @@ type RenderWebControlsOptions<T extends string> = {
   options: readonly T[];
   defaultOption: T;
   onRun: () => Promise<void>;
-  onPushTrigger?: () => Promise<void>;
-  onPushPanic?: () => Promise<void>;
+  onPushTrigger?: () => Promise<boolean | void>;
+  onPushPanic?: () => Promise<boolean | void>;
   selectId?: string;
   startLabel?: string;
   restartLabel?: string;
@@ -177,7 +177,7 @@ ${renderActionControls()}
       if (runSucceeded) {
         if (restartButton) restartButton.disabled = false;
         if (pushTriggerButton) pushTriggerButton.disabled = false;
-        if (pushPanicButton) pushPanicButton.disabled = false;
+        if (pushPanicButton) pushPanicButton.disabled = true;
       } else {
         if (actionControls) actionControls.style.display = 'none';
         if (startControls) startControls.style.display = '';
@@ -192,7 +192,22 @@ ${renderActionControls()}
     void run();
   });
   pushTriggerButton?.addEventListener('click', () => {
-    void onPushTrigger?.();
+    void (async () => {
+      if (!onPushTrigger || !pushTriggerButton) return;
+      pushTriggerButton.disabled = true;
+      if (pushPanicButton) pushPanicButton.disabled = true;
+      try {
+        const result = await onPushTrigger();
+        if (result === false) {
+          pushTriggerButton.disabled = false;
+          return;
+        }
+        if (pushTriggerButton) pushTriggerButton.style.display = 'none';
+        if (pushPanicButton) pushPanicButton.disabled = false;
+      } catch {
+        pushTriggerButton.disabled = false;
+      }
+    })();
   });
   pushPanicButton?.addEventListener('click', () => {
     void onPushPanic?.();

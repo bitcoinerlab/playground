@@ -194,7 +194,7 @@ const logPackageResult = async ({
 const pushParentWithCpfp = async (label: 'trigger' | 'panic') => {
   if (!vaultState) {
     Log(`⚠️ No vault exists yet. Run the playground first.`);
-    return;
+    return false;
   }
   const { psbtTrigger, psbtPanic, masterNode, discovery } = vaultState;
   const parentPsbt = label === 'trigger' ? psbtTrigger : psbtPanic;
@@ -230,7 +230,7 @@ const pushParentWithCpfp = async (label: 'trigger' | 'panic') => {
   });
   if (typeof cpfp === 'string') {
     Log(`⚠️ Could not push ${label}: ${cpfp}`);
-    return;
+    return false;
   }
   if (cpfp.warning) Log(`⚠️ ${cpfp.warning}`);
 
@@ -240,11 +240,12 @@ const pushParentWithCpfp = async (label: 'trigger' | 'panic') => {
     method: 'POST',
     body: JSON.stringify([parentTx.toHex(), cpfp.tx.toHex()])
   });
-  await logPackageResult({
+  const packageOk = await logPackageResult({
     pkgRes,
     parentTxId,
     childTxId: cpfp.tx.getId()
   });
+  return packageOk;
 };
 
 const start = async (backupType: BackupType) => {
@@ -628,14 +629,21 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 const startNode = async () => {
   const backupType = await pickBackupType();
   await start(backupType);
+  let triggerSuccessfullyPushed = false;
   for (;;) {
+    const options = triggerSuccessfullyPushed
+      ? (['Push panic', 'Exit'] as const)
+      : (['Push trigger/unvault', 'Exit'] as const);
+    const fallback = options[0];
     const action = await promptNodeChoice({
-      options: ['Push trigger/unvault', 'Push panic', 'Exit'] as const,
-      fallback: 'Exit',
+      options,
+      fallback,
       promptLabel: 'Action'
     });
     if (action === 'Exit') break;
-    if (action === 'Push trigger/unvault') await pushParentWithCpfp('trigger');
+    if (action === 'Push trigger/unvault') {
+      triggerSuccessfullyPushed = await pushParentWithCpfp('trigger');
+    }
     if (action === 'Push panic') await pushParentWithCpfp('panic');
   }
   explorer.close();
@@ -651,7 +659,7 @@ if (isWeb) {
       await start(backupType);
     },
     onPushTrigger: async () => {
-      await pushParentWithCpfp('trigger');
+      return await pushParentWithCpfp('trigger');
     },
     onPushPanic: async () => {
       await pushParentWithCpfp('panic');
