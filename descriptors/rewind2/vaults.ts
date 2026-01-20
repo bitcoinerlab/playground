@@ -12,7 +12,8 @@ export const BACKUP_TYPES: BackupType[] = [
 export const DEFAULT_BACKUP_TYPE: BackupType = 'OP_RETURN_TRUC';
 
 const VAULT_OUTPUT_INDEX = 0;
-const BACKOUT_OUTPUT_INDEX = 1;
+const BACKUP_OUTPUT_INDEX = 1;
+const ANCHOR_RESERVE_OUTPUT_INDEX = 2;
 
 export type UtxosData = Array<{
   tx: Transaction;
@@ -145,6 +146,8 @@ const coinselectVaultUtxosData = ({
   vaultedAmount,
   backupOutput,
   backupCost,
+  anchorReserve = 0,
+  anchorReserveOutput,
   changeOutput,
   feeRate
 }: {
@@ -153,6 +156,8 @@ const coinselectVaultUtxosData = ({
   vaultedAmount: number | 'MAX_FUNDS';
   backupOutput?: OutputInstance;
   backupCost?: number;
+  anchorReserve?: number;
+  anchorReserveOutput?: OutputInstance;
   changeOutput: OutputInstance;
   feeRate: number;
 }) => {
@@ -169,12 +174,26 @@ const coinselectVaultUtxosData = ({
   } else if (backupOutput || backupCost !== undefined) {
     throw new Error('backupOutput and backupCost must be provided together');
   }
+  const shouldReserveAnchor = anchorReserve > 0;
+  if (shouldReserveAnchor && !anchorReserveOutput)
+    throw new Error('anchorReserveOutput required when anchorReserve is set');
+  if (!shouldReserveAnchor && anchorReserveOutput)
+    throw new Error(
+      'anchorReserve must be set when anchorReserveOutput exists'
+    );
+  if (shouldReserveAnchor && anchorReserveOutput) {
+    const dust = dustThreshold(anchorReserveOutput);
+    if (anchorReserve <= dust)
+      return `ANCHOR RESERVE BELOW DUST: ${anchorReserve} <= ${dust}`;
+  }
   let coinselected;
   let targets;
   if (vaultedAmount === 'MAX_FUNDS') {
     targets = [];
     if (backupOutput && backupCost !== undefined)
       targets.push({ output: backupOutput, value: backupCost });
+    if (shouldReserveAnchor && anchorReserveOutput)
+      targets.push({ output: anchorReserveOutput, value: anchorReserve });
 
     coinselected = maxFunds({
       utxos,
@@ -196,18 +215,28 @@ const coinselectVaultUtxosData = ({
       value: vaultTarget.value
     };
     if (backupOutput && backupCost !== undefined)
-      targets[BACKOUT_OUTPUT_INDEX] = {
+      targets[BACKUP_OUTPUT_INDEX] = {
         output: backupOutput,
         value: backupCost
+      };
+    if (shouldReserveAnchor && anchorReserveOutput)
+      targets[ANCHOR_RESERVE_OUTPUT_INDEX] = {
+        output: anchorReserveOutput,
+        value: anchorReserve
       };
     vaultedAmount = vaultTarget.value;
   } else {
     targets = [];
     targets[VAULT_OUTPUT_INDEX] = { output: vaultOutput, value: vaultedAmount };
     if (backupOutput && backupCost !== undefined)
-      targets[BACKOUT_OUTPUT_INDEX] = {
+      targets[BACKUP_OUTPUT_INDEX] = {
         output: backupOutput,
         value: backupCost
+      };
+    if (shouldReserveAnchor && anchorReserveOutput)
+      targets[ANCHOR_RESERVE_OUTPUT_INDEX] = {
+        output: anchorReserveOutput,
+        value: anchorReserve
       };
 
     coinselected = coinselect({
@@ -257,6 +286,8 @@ export const getVaultContext = ({
   masterNode,
   randomMasterNode,
   changeDescriptorWithIndex,
+  anchorReserve = 0,
+  anchorReserveDescriptorWithIndex,
   vaultIndex,
   backupType,
   feeRate,
@@ -268,6 +299,8 @@ export const getVaultContext = ({
   masterNode: BIP32Interface;
   randomMasterNode: BIP32Interface;
   changeDescriptorWithIndex: { descriptor: string; index: number };
+  anchorReserve?: number;
+  anchorReserveDescriptorWithIndex?: { descriptor: string; index: number };
   vaultIndex: number;
   backupType: BackupType;
   feeRate: number;
@@ -292,6 +325,18 @@ export const getVaultContext = ({
     network
   });
   const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
+  const shouldReserveAnchor = anchorReserve > 0;
+  let anchorReserveOutput: OutputInstance | undefined;
+  if (shouldReserveAnchor) {
+    if (!anchorReserveDescriptorWithIndex)
+      throw new Error('Missing anchorReserveDescriptorWithIndex');
+    anchorReserveOutput = new Output({
+      ...anchorReserveDescriptorWithIndex,
+      network
+    });
+  } else if (anchorReserveDescriptorWithIndex)
+    throw new Error('anchorReserve must be set when descriptor is provided');
+
   const backupCost = getBackupCost(backupType, feeRate);
   // Run the coinselector
   const selected = coinselectVaultUtxosData({
@@ -300,6 +345,8 @@ export const getVaultContext = ({
     vaultedAmount,
     backupOutput,
     backupCost,
+    anchorReserve,
+    ...(anchorReserveOutput ? { anchorReserveOutput } : {}),
     changeOutput,
     feeRate
   });
@@ -335,6 +382,7 @@ export const getVaultContext = ({
     randomPubKey,
     vaultOutput,
     backupOutput,
+    anchorReserveOutput,
     changeOutput,
     backupCost,
     backupOutputValue,
@@ -351,6 +399,8 @@ export const createVault = ({
   randomMasterNode,
   coldAddress,
   changeDescriptorWithIndex,
+  anchorReserve = 0,
+  anchorReserveDescriptorWithIndex,
   vaultIndex,
   backupType,
   shiftFeesToBackupEnd = false,
@@ -365,6 +415,8 @@ export const createVault = ({
   randomMasterNode: BIP32Interface;
   coldAddress: string;
   changeDescriptorWithIndex: { descriptor: string; index: number };
+  anchorReserve?: number;
+  anchorReserveDescriptorWithIndex?: { descriptor: string; index: number };
   vaultIndex: number;
   backupType: BackupType;
   shiftFeesToBackupEnd?: boolean;
@@ -375,6 +427,7 @@ export const createVault = ({
     randomPubKey,
     vaultOutput,
     backupOutput,
+    anchorReserveOutput,
     selected,
     backupCost,
     backupOutputValue
@@ -382,6 +435,10 @@ export const createVault = ({
     masterNode,
     randomMasterNode,
     changeDescriptorWithIndex,
+    anchorReserve,
+    ...(anchorReserveDescriptorWithIndex
+      ? { anchorReserveDescriptorWithIndex }
+      : {}),
     vaultIndex,
     backupType,
     feeRate,
@@ -395,11 +452,24 @@ export const createVault = ({
   const vaultTargets = selected.targets;
   if (vaultTargets[VAULT_OUTPUT_INDEX]?.output !== vaultOutput)
     throw new Error("coinselect first output should be the vault's output");
-  if (vaultTargets[BACKOUT_OUTPUT_INDEX]?.output !== backupOutput)
+  if (vaultTargets[BACKUP_OUTPUT_INDEX]?.output !== backupOutput)
     throw new Error('coinselect second output should be the backup output');
-  if (vaultTargets.length > 3)
+  const shouldReserveAnchor = anchorReserve > 0;
+  if (
+    shouldReserveAnchor &&
+    vaultTargets[ANCHOR_RESERVE_OUTPUT_INDEX]?.output !== anchorReserveOutput
+  )
+    throw new Error('coinselect third output should be the anchor reserve');
+  if (!shouldReserveAnchor && anchorReserveOutput)
+    throw new Error('Unexpected anchor reserve output');
+  if (shouldReserveAnchor && anchorReserveOutput) {
+    const anchorTarget = vaultTargets[ANCHOR_RESERVE_OUTPUT_INDEX];
+    if (!anchorTarget || anchorTarget.value !== anchorReserve)
+      throw new Error('Invalid anchor reserve amount');
+  }
+  if (vaultTargets.length > (shouldReserveAnchor ? 4 : 3))
     throw new Error(
-      'coinselect outputs should be vault, backup, and change at most'
+      'coinselect outputs should be vault, backup, anchor reserve, and change at most'
     );
   const psbtVault = new Psbt({ network });
 
@@ -426,7 +496,7 @@ export const createVault = ({
   const backupOutputIndex = vaultTargets.findIndex(
     target => target.output === backupOutput
   );
-  if (backupOutputIndex !== BACKOUT_OUTPUT_INDEX) return 'UNKNOWN_ERROR';
+  if (backupOutputIndex !== BACKUP_OUTPUT_INDEX) return 'UNKNOWN_ERROR';
   if (backupOutputValue !== vaultTargets[backupOutputIndex]?.value)
     return 'UNKNOWN_ERROR';
   //Sign
@@ -504,6 +574,7 @@ export const createVault = ({
     psbtPanic,
     backupCost,
     backupOutputValue,
+    anchorReserveOutput,
     vaultUtxosData,
     randomMasterNode
   };
@@ -550,7 +621,7 @@ export const createOpReturnBackup = ({
   const backupInputFinalizer = backupOutput.updatePsbtAsInput({
     psbt: psbtBackup,
     txHex: vaultTx.toHex(),
-    vout: BACKOUT_OUTPUT_INDEX
+    vout: BACKUP_OUTPUT_INDEX
   });
 
   // Output: OP_RETURN
@@ -618,7 +689,7 @@ export const createInscriptionBackup = ({
     descriptor: getBackupDescriptor({ masterNode, network, index: vaultIndex }),
     network
   });
-  const backupOut = vaultTx.outs[BACKOUT_OUTPUT_INDEX];
+  const backupOut = vaultTx.outs[BACKUP_OUTPUT_INDEX];
   if (!backupOut) throw new Error('Backup output not found in vault tx');
   const backupOutputValue = backupOut.value;
   const commitFeeRate = shiftFeesToBackupEnd ? MIN_RELAY_FEE_RATE : feeRate;
@@ -633,7 +704,7 @@ export const createInscriptionBackup = ({
   const commitInputFinalizer = backupOutput.updatePsbtAsInput({
     psbt: psbtCommit,
     txHex: vaultTx.toHex(),
-    vout: BACKOUT_OUTPUT_INDEX
+    vout: BACKUP_OUTPUT_INDEX
   });
   backupInscription.updatePsbtAsOutput({
     psbt: psbtCommit,

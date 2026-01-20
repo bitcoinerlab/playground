@@ -47,13 +47,13 @@ import {
   wait
 } from './utils';
 
-// TODO: Add a mechanism to keep a balance margin for paying anchor fees.
 // TODO: Payload encryption.
 const FEE_RATE = 2.0;
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
 const FAUCET_FETCH_DELAY_MS = 1500;
 const SHIFT_FEES_TO_BACKUP_END = true;
+const ANCHOR_FEE_RESERVE_SATS = 10000;
 
 const pickBackupType = () =>
   pickChoice(
@@ -88,19 +88,13 @@ export const getUtxosData = (
   });
 };
 
-const getChangeDescriptorWithIndex = (
+const getDescriptorWithIndex = (
   discovery: DiscoveryInstance,
-  fallbackDescriptor: string
+  descriptor: string
 ) => {
-  const accounts = discovery.getUsedAccounts();
-  const mainAccount = accounts[0];
-  const changeDescriptor = mainAccount
-    ? mainAccount.replace(/\/0\/\*/g, '/1/*')
-    : fallbackDescriptor;
-  if (!changeDescriptor) throw new Error('Missing change descriptor');
   return {
-    descriptor: changeDescriptor,
-    index: discovery.getNextIndex({ descriptor: changeDescriptor })
+    descriptor,
+    index: discovery.getNextIndex({ descriptor })
   };
 };
 
@@ -125,7 +119,6 @@ import {
   type BackupType,
   type UtxosData
 } from './vaults';
-import { INSCRIPTION_REVEAL_GARBAGE_BYTES } from './vaultSizes';
 
 const { explorerTxLink, explorerAddressLink, explorerBaseLink } =
   createExplorerLinks(EXPLORER_URL);
@@ -179,13 +172,27 @@ Every reload reuses the same mnemonic for convenience.`);
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/*' }),
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/1/*' })
   ];
+  // wpkhBIP32 for keyPath /2/* would throw for non standard key, so genealize:
+  const anchorReserveDescriptor = `wpkh(${keyExpressionBIP32({
+    masterNode,
+    originPath: `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`,
+    keyPath: '/2/*'
+  })})`;
   if (!descriptors[0] || !descriptors[1])
     throw new Error('Could not derive wallet descriptors');
   await discovery.fetch({ descriptors });
+  await discovery.fetch({ descriptor: anchorReserveDescriptor });
+  const anchorReserveDescriptorWithIndex = getDescriptorWithIndex(
+    discovery,
+    anchorReserveDescriptor
+  );
   const initialHistoryLength = discovery.getHistory({
     descriptors,
     txStatus: TxStatus.ALL
   }).length;
+  const anchorReserveUtxos = discovery.getUtxosAndBalance({
+    descriptor: anchorReserveDescriptor
+  });
 
   let utxosAndBalance = discovery.getUtxosAndBalance({ descriptors });
   let vaultMaxFundsContext = getVaultContext({
@@ -194,12 +201,17 @@ Every reload reuses the same mnemonic for convenience.`);
     utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
     masterNode,
     randomMasterNode,
-    changeDescriptorWithIndex: getChangeDescriptorWithIndex(
+    //changeDescriptorWithIndex is unused when passing vaultedAmount 'MAX_FUNDS'
+    changeDescriptorWithIndex: getDescriptorWithIndex(
       discovery,
       descriptors[1]
     ),
-    vaultIndex: 0, //Dummmy value is ok just to grab vsize
-    backupType: backupType,
+    anchorReserve: ANCHOR_FEE_RESERVE_SATS,
+    anchorReserveDescriptorWithIndex,
+    //Dummmy 0 value is ok if we just need vaultMaxFundsContext to grab vaule
+    //ranges and costs, not real outputs for building transactions
+    vaultIndex: 0,
+    backupType,
     shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
     network
   });
@@ -208,10 +220,8 @@ Every reload reuses the same mnemonic for convenience.`);
   let coinselectedVaultMaxFunds = vaultMaxFundsContext.selected;
 
   let maxVaultableAmount;
-  if (typeof coinselectedVaultMaxFunds === 'string') {
-    Log(`The coinselector failed: ${coinselectedVaultMaxFunds}`);
-    maxVaultableAmount = 0;
-  } else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
+  if (typeof coinselectedVaultMaxFunds === 'string') maxVaultableAmount = 0;
+  else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
 
   Log(`Backup type: ${backupType}`);
   Log(`The backup will cost: ${vaultMaxFundsContext.backupCost}`);
@@ -220,6 +230,9 @@ Every reload reuses the same mnemonic for convenience.`);
   Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
   Log(`🔍 Wallet UTXOs: ${utxosAndBalance.utxos.length}`);
   Log(`🔍 Wallet max vaultable amount: ${maxVaultableAmount}`);
+  Log(
+    `🔒 Anchor reserve balance: ${anchorReserveUtxos.balance} sats (${anchorReserveUtxos.utxos.length} UTXOs)`
+  );
 
   // Trigger tx pays zero fees, so unvaulted amount equals vaulted amount.
   if (maxVaultableAmount < minVaultableAmount) {
@@ -278,12 +291,14 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       utxosData: getUtxosData(utxosAndBalance.utxos, network, discovery),
       masterNode,
       randomMasterNode,
-      changeDescriptorWithIndex: getChangeDescriptorWithIndex(
+      changeDescriptorWithIndex: getDescriptorWithIndex(
         discovery,
         descriptors[1]
       ),
+      anchorReserve: ANCHOR_FEE_RESERVE_SATS,
+      anchorReserveDescriptorWithIndex,
       vaultIndex: 0, //Dummmy value is ok just to grab vsize
-      backupType: backupType,
+      backupType,
       shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
       network
     });
@@ -327,10 +342,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     network
   }).getAddress();
   Log(`❄️ Emergency address: ${explorerAddressLink(coldAddress)}`);
-  const changeDescriptorWithIndex = getChangeDescriptorWithIndex(
-    discovery,
-    descriptors[1]
-  );
   const unvaultKey = keyExpressionBIP32({
     masterNode,
     originPath: "/0'",
@@ -345,9 +356,14 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     masterNode,
     randomMasterNode,
     coldAddress,
-    changeDescriptorWithIndex,
+    changeDescriptorWithIndex: getDescriptorWithIndex(
+      discovery,
+      descriptors[1]
+    ),
+    anchorReserve: ANCHOR_FEE_RESERVE_SATS,
+    anchorReserveDescriptorWithIndex,
     vaultIndex,
-    backupType: backupType,
+    backupType,
     shiftFeesToBackupEnd: SHIFT_FEES_TO_BACKUP_END,
     network
   });
@@ -387,9 +403,6 @@ Please retry (max 2 faucet requests per IP/address per minute).`
         : 'no fee shift'
     })`
   );
-  //Log(
-  //  `📦 Reveal OP_RETURN padding to avoid tx-size-small errors: ${INSCRIPTION_REVEAL_GARBAGE_BYTES} bytes`
-  //);
 
   if (backupType === 'INSCRIPTION') {
     const inscriptionPsbts = createInscriptionBackup({
