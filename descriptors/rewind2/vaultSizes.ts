@@ -7,8 +7,7 @@ const uniqueSorted = (values: number[]) =>
     .filter((value, index, array) => array.indexOf(value) === index)
     .sort((a, b) => a - b);
 
-export const INSCRIPTION_CONTENT_TYPE =
-  'application/vnd.rewindbitcoin;readme=inscription:123456';
+export const INSCRIPTION_CONTENT_TYPE = 'application/vnd.rewindbitcoin';
 const INSCRIPTION_CONTENT_TYPE_BYTES = Buffer.byteLength(
   INSCRIPTION_CONTENT_TYPE
 );
@@ -116,9 +115,11 @@ const VAULT_ENTRY_BYTES = uniqueSorted(
     )
   )
 );
-//
-//"REW" = 3-byte
-const VAULT_CONTENT_BYTES = VAULT_ENTRY_BYTES.map(bytes => bytes + 3);
+// "REW" = 3-byte, plus XChaCha20-Poly1305 nonce (24) and tag (16).
+const ENCRYPTION_OVERHEAD_BYTES = 24 + 16;
+const VAULT_CONTENT_BYTES = VAULT_ENTRY_BYTES.map(
+  bytes => bytes + 3 + ENCRYPTION_OVERHEAD_BYTES
+);
 const P2WPKH_WITNESS_BYTES = [108, 109, 110, 111];
 
 const OP_RETURN_SCRIPT_BYTES = VAULT_CONTENT_BYTES.map(opReturnScriptBytes);

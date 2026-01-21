@@ -51,6 +51,7 @@ interface TinySecp256k1Interface {
 import { encode, encodingLength } from 'varuint-bitcoin';
 
 const encoder = new TextEncoder();
+const MAX_TAPSCRIPT_ELEMENT_BYTES = 520;
 
 function reverseBuffer(buffer: Buffer): Buffer {
   if (buffer.length < 1) return buffer;
@@ -131,6 +132,18 @@ function createInscriptionScript({
   inscription: InscriptionData;
 }): (number | Buffer)[] {
   const protocolId = Buffer.from(encoder.encode('ord'));
+  const contentChunks: Buffer[] = [];
+  for (
+    let offset = 0;
+    offset < inscription.content.length;
+    offset += MAX_TAPSCRIPT_ELEMENT_BYTES
+  ) {
+    const chunk = inscription.content.subarray(
+      offset,
+      offset + MAX_TAPSCRIPT_ELEMENT_BYTES
+    );
+    contentChunks.push(Buffer.from(chunk));
+  }
 
   return [
     xOnlyPublicKey,
@@ -142,7 +155,7 @@ function createInscriptionScript({
     1,
     Buffer.from(encoder.encode(inscription.contentType)),
     opcodes['OP_0']!,
-    inscription.content,
+    ...contentChunks,
     opcodes['OP_ENDIF']!
   ];
 }

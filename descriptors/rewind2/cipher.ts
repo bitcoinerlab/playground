@@ -5,71 +5,26 @@ import type { BIP32Interface } from 'bip32';
 import { sha256 } from '@noble/hashes/sha2';
 import { MessageFactory } from '@jl.landabaso/btcmessage';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
+import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
+import {
+  managedNonce,
+  randomBytes,
+  utf8ToBytes
+} from '@noble/ciphers/utils.js';
 const MessageAPI = MessageFactory(secp256k1);
+const CIPHER_ADDITIONAL_DATA_BYTES = utf8ToBytes(CIPHER_ADDITIONAL_DATA);
 
 export const getManagedChacha = async (key: Uint8Array) => {
-  //defer the load since this can really slow down initial loads in slow old
-  //android devices.
-  //const sodium = await import('react-native-libsodium');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const sodium = require('sodium-javascript');
+  const managedXChaCha = managedNonce(xchacha20poly1305, randomBytes);
 
   return {
     encrypt: (message: string | Uint8Array) => {
-      const nonce = sodium.randombytes_buf(
-        sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES
-      );
-      if (key.length !== sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES)
-        throw new Error(
-          `key length is ${key.length} != ${sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES}`
-        );
-
-      const rawCipherMessage =
-        sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
-          message,
-          CIPHER_ADDITIONAL_DATA, //additional data that can be verified (this is not encoded)
-          null, //secret nonce
-          nonce, //public nonce
-          key,
-          'uint8array' //Result type
-        );
-      const cipherMessage = new Uint8Array(
-        nonce.length + rawCipherMessage.length
-      );
-      cipherMessage.set(nonce, 0);
-      cipherMessage.set(rawCipherMessage, nonce.length);
-      return cipherMessage;
+      const payload =
+        typeof message === 'string' ? utf8ToBytes(message) : message;
+      return managedXChaCha(key, CIPHER_ADDITIONAL_DATA_BYTES).encrypt(payload);
     },
-    decrypt: (cipherMessage: Uint8Array) => {
-      // Extract the nonce from the beginning of the cipherMessage
-      const nonce = cipherMessage.slice(
-        0,
-        sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES
-      );
-
-      // The actual encrypted message is the part after the nonce
-      const encryptedMessage = cipherMessage.slice(
-        sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES
-      );
-
-      if (key.length !== sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES) {
-        throw new Error(
-          `key length is ${key.length} != ${sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES}`
-        );
-      }
-
-      // Decrypt the message
-      const decryptedMessage =
-        sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
-          null, // secret nonce is null since it wasn't used in encryption
-          encryptedMessage, // the encrypted part of the message
-          CIPHER_ADDITIONAL_DATA, // additional data for verification
-          nonce, // public nonce
-          key
-        );
-
-      return decryptedMessage;
-    }
+    decrypt: (cipherMessage: Uint8Array) =>
+      managedXChaCha(key, CIPHER_ADDITIONAL_DATA_BYTES).decrypt(cipherMessage)
   };
 };
 
