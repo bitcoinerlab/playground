@@ -61,8 +61,8 @@ mnemonic alone.
 Below are the three on-chain backup approaches Rewind 2 evaluates, with their
 tradeoffs and policy constraints.
 
-The playground defaults to **OP_RETURN + v2** because it avoids TRUC confirmation
-constraints and is faster to demo on test networks.
+The playground defaults to **OP_RETURN + v2 (non-TRUC)** because it avoids UTXO
+confirmation constraints and makes it faster to demo.
 
 ### OP_RETURN + TRUC
 
@@ -165,12 +165,12 @@ Cons:
 ### Inscriptions
 
 Inscriptions use a commit+reveal chain with the payload in the reveal
-transaction witness. Fee shifting uses minimum relay fees on the vault/commit
-transactions and a higher‑fee reveal transaction for CPFP.
+transaction witness. Fee shifting uses minimum relay fees on the vault and
+commit transactions and a higher‑fee reveal transaction for CPFP.
 
 The reveal transaction creates a small OP_RETURN padding output. The padding
 is just garbage data used to avoid Core's `tx-size-small` policy (non‑witness
-size >= 65 bytes).
+size must be >= 65 bytes).
 
 ```mermaid
 flowchart LR
@@ -278,8 +278,8 @@ child spends the P2A anchor and pays the full fee, pulling both into the block.
 ### Anchor Reserve Funding
 
 The playground reserves a small balance specifically for CPFP fee bumps. It is
-funded from a dedicated wallet branch (`/2/*`) so the wallet always has an
-available UTXO to spend into the CPFP child.
+funded from a dedicated wallet branch (`/2/*`) so the wallet always has
+available UTXOs to spend into the CPFP child.
 
 ### Vault Output Ordering
 
@@ -288,7 +288,7 @@ identify vaults and enumerate how many exist.
 
 - Output 0: The output that feeds the trigger transaction.
 - Output 1: A deterministic vault marker output used to fund the backup.
-- Output 2: Optional anchor reserve output for P2A fee bumping.
+- Output 2: Anchor reserve output for P2A fee bumping.
 - Output 3: Change output, when needed.
 
 Each vault uses a unique index derived from the wallet seed. The marker output
@@ -301,16 +301,15 @@ already used and selects the next unused index. This lets the wallet discover
 and count all vaults just by checking which deterministic vault paths have been
 used, without any extra metadata.
 
-### Playground Actions
-
-In the playground UI/CLI, panic is only enabled after a successful trigger push
-because the panic transaction spends the trigger's output. This mirrors the
-recommended flow and keeps the demo path intuitive.
-
 ### Backup Encryption
 
-The backup payload is encrypted with XChaCha20-Poly1305. The `REW` magic header
-remains plaintext, and the ciphertext includes the 24-byte nonce and 16-byte
-authentication tag. The cipher key is deterministically derived from the wallet
-seed using the vault path (`m/1073'/<network>'/0'/<index>`) via
-`getSeedDerivedCipherKey`, and the AAD is fixed to `Rewind Bitcoin`.
+The backup payload is encrypted with XChaCha20-Poly1305. Each payload starts
+with a 3-byte `REW` magic prefix that identifies rewind backups; the prefix
+remains plaintext while the encrypted payload includes the 24-byte nonce and
+16-byte authentication tag. The cipher key is deterministically derived from the
+wallet seed using the vault path (`m/1073'/<network>'/0'/<index>`) via
+`getSeedDerivedCipherKey`: the child key signs the fixed message `Satoshi
+Nakamoto`, and the signature is hashed with SHA256 to produce the 32-byte cipher
+key. This matches the scheme used in Rewind 1 [community
+backups](https://rewindbitcoin.com/community-backups). The AAD is fixed to
+`Rewind Bitcoin`.
