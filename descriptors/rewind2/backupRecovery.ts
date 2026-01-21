@@ -89,8 +89,15 @@ const extractOrdinalPayload = (chunks: Array<number | Buffer>) => {
     const item = chunks[i];
     if (Buffer.isBuffer(item) && item.equals(ORD_MARKER)) {
       for (let j = i + 1; j < chunks.length - 1; j += 1) {
-        if (chunks[j] === opcodes['OP_0'] && Buffer.isBuffer(chunks[j + 1])) {
-          return chunks[j + 1] as Buffer;
+        if (chunks[j] === opcodes['OP_0']) {
+          const payloadChunks: Buffer[] = [];
+          for (let k = j + 1; k < chunks.length; k += 1) {
+            const chunk = chunks[k];
+            if (!chunk) break;
+            if (typeof chunk === 'number') break;
+            payloadChunks.push(chunk);
+          }
+          if (payloadChunks.length) return Buffer.concat(payloadChunks);
         }
       }
     }
