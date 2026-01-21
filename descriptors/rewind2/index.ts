@@ -638,9 +638,12 @@ const startNode = async () => {
   const backupType = await pickBackupType();
   await start(backupType);
   let triggerSuccessfullyPushed = false;
+  let panicSuccessfullyPushed = false;
   for (;;) {
     const options = triggerSuccessfullyPushed
-      ? (['Push panic', 'Exit'] as const)
+      ? panicSuccessfullyPushed
+        ? (['Exit'] as const)
+        : (['Push panic', 'Exit'] as const)
       : (['Push trigger/unvault', 'Exit'] as const);
     const fallback = options[0];
     const action = await promptNodeChoice({
@@ -652,7 +655,9 @@ const startNode = async () => {
     if (action === 'Push trigger/unvault') {
       triggerSuccessfullyPushed = await pushParentWithCpfp('trigger');
     }
-    if (action === 'Push panic') await pushParentWithCpfp('panic');
+    if (action === 'Push panic') {
+      panicSuccessfullyPushed = await pushParentWithCpfp('panic');
+    }
   }
   explorer.close();
 };
@@ -670,7 +675,7 @@ if (isWeb) {
       return await pushParentWithCpfp('trigger');
     },
     onPushPanic: async () => {
-      await pushParentWithCpfp('panic');
+      return await pushParentWithCpfp('panic');
     }
   });
 } else {

@@ -210,7 +210,20 @@ ${renderActionControls()}
     })();
   });
   pushPanicButton?.addEventListener('click', () => {
-    void onPushPanic?.();
+    void (async () => {
+      if (!onPushPanic || !pushPanicButton) return;
+      pushPanicButton.disabled = true;
+      try {
+        const result = await onPushPanic();
+        if (result === false) {
+          pushPanicButton.disabled = false;
+          return;
+        }
+        pushPanicButton.style.display = 'none';
+      } catch {
+        pushPanicButton.disabled = false;
+      }
+    })();
   });
 };
 
