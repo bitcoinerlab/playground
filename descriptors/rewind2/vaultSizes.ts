@@ -7,8 +7,7 @@ const uniqueSorted = (values: number[]) =>
     .filter((value, index, array) => array.indexOf(value) === index)
     .sort((a, b) => a - b);
 
-export const INSCRIPTION_CONTENT_TYPE =
-  'application/vnd.rewindbitcoin;readme=inscription:123456';
+export const INSCRIPTION_CONTENT_TYPE = 'application/vnd.rewindbitcoin';
 const INSCRIPTION_CONTENT_TYPE_BYTES = Buffer.byteLength(
   INSCRIPTION_CONTENT_TYPE
 );
