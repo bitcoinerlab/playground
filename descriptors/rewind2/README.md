@@ -304,6 +304,20 @@ already used and selects the next unused index. This lets the wallet discover
 and count all vaults just by checking which deterministic vault paths have been
 used, without any extra metadata.
 
+### Why Not Put the Backup in the Vault Tx?
+
+It may seem simpler to put the backup payload directly in the `Vault Tx` or to
+reuse the `Vault Tx` as the inscription commit. We can't, because the
+**trigger** and **panic** transactions spend a `Vault Tx` output and are
+pre-signed against the `Vault Tx` txid. If we change the `Vault Tx` outputs
+after those signatures exist, the txid changes and the trigger/panic signatures
+become invalid.
+
+The solution is to reserve a dedicated output in the `Vault Tx` and then spend
+it in a separate backup transaction (and in the inscription case, a commit +
+reveal chain). This keeps the `Vault Tx` txid fixed while still allowing the
+backup payload to be written safely on-chain.
+
 ### Backup Encryption
 
 The backup payload is encrypted with XChaCha20-Poly1305. Each payload starts
