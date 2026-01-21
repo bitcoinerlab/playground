@@ -237,7 +237,6 @@ const pushParentWithCpfp = async (label: 'trigger' | 'panic') => {
     Log(`⚠️ Could not push ${label}: ${cpfp}`);
     return false;
   }
-  if (cpfp.warning) Log(`⚠️ ${cpfp.warning}`);
 
   Log(`📦 Pushing ${label} + CPFP child...`);
   const pkgUrl = `${ESPLORA_API}/txs/package`;

@@ -2,6 +2,10 @@ const LOCK_BLOCKS = 2;
 const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
 const VAULT_PURPOSE = 1073;
 const MIN_RELAY_FEE_RATE = 0.1;
+// P2A input weight = base input (36 prevout + 1 scriptLen + 4 sequence) * 4
+// plus segwit marker/flag (2) and witness (1 stack item count + 1 empty push)
+// so weight = 41*4 + 2 + 2 = 166 wu => vsize = ceil(166/4) = 42 vB.
+const P2A_INPUT_WEIGHT = 166;
 
 export type BackupType = 'INSCRIPTION' | 'OP_RETURN_TRUC' | 'OP_RETURN_V2';
 export const BACKUP_TYPES: BackupType[] = [
@@ -54,7 +58,12 @@ import { compilePolicy } from '@bitcoinerlab/miniscript';
 import { InscriptionsFactory } from './inscriptions';
 import { getManagedChacha, getSeedDerivedCipherKey } from './cipher';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
-import { coinselect, dustThreshold, maxFunds } from '@bitcoinerlab/coinselect';
+import {
+  coinselect,
+  dustThreshold,
+  maxFunds,
+  vsize
+} from '@bitcoinerlab/coinselect';
 const { Inscription } = InscriptionsFactory(secp256k1);
 
 const getInscriptionCommitOutputBackupPath = (
@@ -797,13 +806,18 @@ export const createP2ACpfpChild = ({
       targetFee: number;
       outputValue: number;
       reserveValue: number;
-      warning?: string;
     }
   | string => {
   if (!anchorReserveUtxosData.length) return 'NO_ANCHOR_RESERVE_UTXOS';
-  const reserveValue = getUtxosValue(anchorReserveUtxosData);
+  const MAX_TRUC_CHILD_VSIZE = 1000; // TRUC v3 child size limit (vbytes)
 
-  const buildChild = (outputValue: number) => {
+  const buildChild = ({
+    outputValue,
+    selectedUtxosData
+  }: {
+    outputValue: number;
+    selectedUtxosData: UtxosData;
+  }) => {
     const psbt = new Psbt({ network });
     psbt.setVersion(3);
     psbt.addInput({
@@ -811,7 +825,7 @@ export const createP2ACpfpChild = ({
       index: 0,
       witnessUtxo: { script: P2A_SCRIPT, value: 0 }
     });
-    const anchorInputFinalizers = anchorReserveUtxosData.map(utxo =>
+    const anchorInputFinalizers = selectedUtxosData.map(utxo =>
       utxo.output.updatePsbtAsInput({
         psbt,
         txHex: utxo.txHex,
@@ -829,30 +843,71 @@ export const createP2ACpfpChild = ({
     return { psbt, tx, vsize: tx.virtualSize() };
   };
 
-  const provisional = buildChild(reserveValue);
-  const targetFee = Math.ceil((parentVsize + provisional.vsize) * feeRate);
-  const outputValue = reserveValue - targetFee;
+  const estimateChildVsize = (selectedUtxosData: UtxosData) => {
+    const inputs = [
+      {
+        isSegwit: () => true,
+        inputWeight: () => P2A_INPUT_WEIGHT
+      },
+      ...selectedUtxosData.map(utxo => utxo.output)
+    ];
+    return vsize(inputs as unknown as OutputInstance[], [anchorReserveOutput]);
+  };
+
   const dust = dustThreshold(anchorReserveOutput);
-  if (outputValue <= dust)
-    return `ANCHOR_CHANGE_BELOW_DUST: ${Math.max(outputValue, 0)} <= ${dust}`;
-  const warningMessages = [];
-  if (reserveValue < targetFee)
-    warningMessages.push(
-      `Anchor reserve (${reserveValue} sats) is below target fee (${targetFee} sats).`
-    );
-  const finalValue = Math.max(0, outputValue);
-  const finalChild = buildChild(finalValue);
-  const warning = warningMessages.length
-    ? warningMessages.join(' ')
-    : undefined;
+  const sortByValueAsc = (a: UtxosData[number], b: UtxosData[number]) => {
+    const aValue = a.tx.outs[a.vout]?.value ?? 0;
+    const bValue = b.tx.outs[b.vout]?.value ?? 0;
+    return aValue - bValue;
+  };
+  const sortByValueDesc = (a: UtxosData[number], b: UtxosData[number]) => {
+    const aValue = a.tx.outs[a.vout]?.value ?? 0;
+    const bValue = b.tx.outs[b.vout]?.value ?? 0;
+    return bValue - aValue;
+  };
+  const attemptSelection = (sortedUtxosData: UtxosData) => {
+    const selectedUtxosData: UtxosData = [];
+    let targetFee = 0;
+    let outputValue = 0;
+    let childVsize = 0;
+    for (const candidate of sortedUtxosData) {
+      selectedUtxosData.push(candidate);
+      childVsize = estimateChildVsize(selectedUtxosData);
+      if (childVsize > MAX_TRUC_CHILD_VSIZE)
+        return {
+          error: `TRUC_CHILD_TOO_LARGE: ${childVsize} > ${MAX_TRUC_CHILD_VSIZE}`
+        };
+      const reserveValue = getUtxosValue(selectedUtxosData);
+      targetFee = Math.ceil((parentVsize + childVsize) * feeRate);
+      outputValue = reserveValue - targetFee;
+      if (outputValue > dust)
+        return { selectedUtxosData, targetFee, outputValue, childVsize };
+    }
+    return {
+      error: `ANCHOR_CHANGE_BELOW_DUST: ${Math.max(outputValue, 0)} <= ${dust}`
+    };
+  };
+  // First try consolidation by spending smaller reserve UTXOs; if the child
+  // grows past TRUC limits or still leaves dust change, fall back to larger
+  // UTXOs to keep the CPFP child small and reliable.
+  const consolidationSelection = attemptSelection(
+    [...anchorReserveUtxosData].sort(sortByValueAsc)
+  );
+  const finalSelection =
+    'error' in consolidationSelection
+      ? attemptSelection([...anchorReserveUtxosData].sort(sortByValueDesc))
+      : consolidationSelection;
+  if ('error' in finalSelection) return finalSelection.error;
+  const { selectedUtxosData, targetFee, outputValue } = finalSelection;
+  const reserveValue = getUtxosValue(selectedUtxosData);
+  const finalChild = buildChild({ outputValue, selectedUtxosData });
 
   return {
     psbt: finalChild.psbt,
     tx: finalChild.tx,
     childVsize: finalChild.vsize,
     targetFee,
-    outputValue: finalValue,
-    reserveValue,
-    ...(warning ? { warning } : {})
+    outputValue,
+    reserveValue
   };
 };
