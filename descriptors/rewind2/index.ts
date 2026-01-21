@@ -289,19 +289,25 @@ const start = async (backupType: BackupType) => {
       writeFileSync('.rew2coldmnemonic', emergencyMnemonic);
     }
   }
-  Log(`🔐 This is your demo wallet (mnemonic):
+  Log(`🔐 This is your demo wallet mnemonic:
 ${mnemonic}
-And this is your emergency mnemonic:
+
+🔐 And this is your emergency mnemonic:
 ${emergencyMnemonic}
 
-⚠️ Save it only if you want. This is the TAPE testnet. 
+ℹ️ Save it only if you want. This is the TAPE testnet. 
 Every reload reuses the same mnemonic for convenience.`);
   const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
   const emergencyMasterNode = BIP32.fromSeed(
     mnemonicToSeedSync(emergencyMnemonic),
     network
   );
-  Log(`🔍 Fetching wallet...`);
+
+  Log(`💾 Backup type: ${backupType}`);
+  Log(`💰 Target fee rate: ${FEE_RATE} sat/vB`);
+  Log(`🔗 Explorer: ${explorerBaseLink()}`);
+
+  Log(`⏳ Fetching wallet...`);
   const descriptors = [
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/0/*' }),
     wpkhBIP32({ masterNode, network, account: 0, keyPath: '/1/*' })
@@ -357,21 +363,17 @@ Every reload reuses the same mnemonic for convenience.`);
   if (typeof coinselectedVaultMaxFunds === 'string') maxVaultableAmount = 0;
   else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
 
-  Log(`Backup type: ${backupType}`);
-  Log(`The backup will cost: ${vaultMaxFundsContext.backupCost}`);
-  Log(`🔗 Explorer: ${explorerBaseLink()}`);
-
-  Log(`🔍 Wallet balance: ${utxosAndBalance.balance}`);
-  Log(`🔍 Wallet UTXOs: ${utxosAndBalance.utxos.length}`);
-  Log(`🔍 Wallet max vaultable amount: ${maxVaultableAmount}`);
+  Log(`ℹ️ Wallet balance: ${utxosAndBalance.balance}`);
+  Log(`ℹ️ Wallet UTXOs: ${utxosAndBalance.utxos.length}`);
+  Log(`ℹ️ Wallet max vaultable amount: ${maxVaultableAmount}`);
   Log(
-    `🔒 Anchor reserve balance: ${anchorReserveUtxos.balance} sats (${anchorReserveUtxos.utxos.length} UTXOs)`
+    `💰 Anchor reserve balance: ${anchorReserveUtxos.balance} sats (${anchorReserveUtxos.utxos.length} UTXOs)`
   );
 
   // Trigger tx pays zero fees, so unvaulted amount equals vaulted amount.
   if (maxVaultableAmount < minVaultableAmount) {
     Log(
-      `💰 The wallet does not have enough funds. Let's request some funds...`
+      `⚠️ The wallet does not have enough funds. Let's request some funds...`
     );
     //New or empty wallet. Let's prepare the faucet request:
     const formData = new URLSearchParams();
@@ -446,9 +448,9 @@ Please retry (max 2 faucet requests per IP/address per minute).`
       throw new Error(
         `Balance too low after coinselect: vaultable amount ${maxVaultableAmount} below dust threshold ${minVaultableAmount}.`
       );
-    Log(`🔍 Updated wallet balance: ${utxosAndBalance.balance}`);
-    Log(`🔍 Updated wallet UTXOs: ${utxosAndBalance.utxos.length}`);
-    Log(`🔍 Updated wallet max vaultable amount: ${maxVaultableAmount}`);
+    Log(`ℹ️ Updated wallet balance: ${utxosAndBalance.balance}`);
+    Log(`ℹ️ Updated wallet UTXOs: ${utxosAndBalance.utxos.length}`);
+    Log(`ℹ️ Updated wallet max vaultable amount: ${maxVaultableAmount}`);
   } else Log(`💰 Existing balance detected. Skipping faucet.`);
 
   const utxosData = getUtxosData(utxosAndBalance.utxos, network, discovery);
@@ -463,8 +465,8 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     gapLimit: VAULT_GAP_LIMIT
   });
   const vaultIndex = discovery.getNextIndex({ descriptor: backupDescriptor });
-  Log(`🔎 Backup descriptor: ${backupDescriptor}`);
-  Log(`🔍 Number of Vaults found: ${vaultIndex}`);
+  Log(`ℹ️ Backup descriptor: ${backupDescriptor}`);
+  Log(`ℹ️ Number of Vaults found: ${vaultIndex}`);
 
   const coldAddress = new Output({
     descriptor: wpkhBIP32({
@@ -519,21 +521,20 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     vault.backupOutputValue - vault.backupCost,
     0
   );
-  Log(`📦 Fee rate: ${FEE_RATE} sat/vB`);
   Log(
-    `💸 Vault tx fee (pure miner fee paid by the vault tx): ${vaultFee} sats${
+    `💰 Vault tx fee (pure miner fee paid by the vault tx): ${vaultFee} sats${
       backupFeeShift > 0
         ? ` (${backupFeeShift} sats shifted into the backup output)`
         : ''
     }`
   );
   Log(
-    `📦 Backup fee baseline (cost before vault fee shift): ${vault.backupCost} sats`
+    `💰 Backup fee baseline (cost before vault fee shift): ${vault.backupCost} sats`
   );
   Log(
-    `📦 Backup output value reserved in vault tx: ${vault.backupOutputValue} sats (${
+    `💾 Backup output value reserved in vault tx: ${vault.backupOutputValue} sats (${
       backupFeeShift > 0
-        ? `includes ${backupFeeShift} sats fee shift from vault tx`
+        ? `${backupFeeShift} sats fee shift from vault tx + ${vault.backupCost} sats baseline`
         : 'no fee shift'
     })`
   );
@@ -587,7 +588,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
           utxo => !confirmedUtxos.includes(`${utxo.tx.getId()}:${utxo.vout}`)
         );
         if (pendingUtxos.length === 0) {
-          Log(`🔍 All vault funding UTXOs are confirmed.`);
+          Log(`ℹ️ All vault funding UTXOs are confirmed.`);
           break;
         }
         if (firstAttempt)

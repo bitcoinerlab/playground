@@ -227,14 +227,14 @@ export const fetchVaultParentsFromBackup = async ({
   if (!spendingTx)
     throw new Error('Backup output not spent yet; no backup tx found');
 
-  Log(`🧾 Backup output spend located. Fetching payload...`);
+  Log(`🔍 Backup output spend located. Fetching payload...`);
   const spendingTxHex = spendingTx.txHex;
   const spendingTxObj = Transaction.fromHex(spendingTxHex);
 
   let payloadSource: 'op_return' | 'inscription' = 'op_return';
   let payload = extractOpReturnPayload(spendingTxObj);
   if (!payload) {
-    Log(`🧭 Following inscription commit to reveal tx...`);
+    Log(`🔍 Following inscription commit to reveal tx...`);
     let revealTx:
       | { txHex: string; irreversible: boolean; blockHeight: number }
       | undefined;
@@ -256,7 +256,7 @@ export const fetchVaultParentsFromBackup = async ({
   if (!payload) throw new Error('Backup payload not found in chain data');
 
   Log(
-    `🧬 Backup payload located (${payloadSource}); decrypting and rebuilding parents...`
+    `🔐 Encrypted backup payload located (${payloadSource}); decrypting and recovering data...`
   );
 
   const { triggerTx, panicTx } = await decryptVaultEntry({
