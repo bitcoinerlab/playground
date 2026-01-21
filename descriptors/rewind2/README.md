@@ -15,6 +15,9 @@ PLAYGROUND**](https://bitcoinerlab.com/guides/rewind2) button on
 BitcoinerLAB.com or by [installing and running the code
 locally](https://github.com/bitcoinerlab/playground).
 
+If you want to follow the code, the Playground Guide at the end of this document
+maps vault and backup concepts to the functions that implement them.
+
 ## Vaults: quick recap
 
 A vault-enabled wallet locks funds to a setup-only key and then destroys that
@@ -309,7 +312,38 @@ remains plaintext while the encrypted payload includes the 24-byte nonce and
 16-byte authentication tag. The cipher key is deterministically derived from the
 wallet seed using the vault path (`m/1073'/<network>'/0'/<index>`) via
 `getSeedDerivedCipherKey`: the child key signs the fixed message `Satoshi
-Nakamoto`, and the signature is hashed with SHA256 to produce the 32-byte cipher
+Nakamoto` and the signature is hashed with SHA256 to produce the 32-byte cipher
 key. This matches the scheme used in Rewind 1 [community
 backups](https://rewindbitcoin.com/community-backups). The AAD is fixed to
 `Rewind Bitcoin`.
+
+### Code Tour (Playground Guide)
+
+This section connects the vault and backup concepts above to the concrete
+functions used in the playground so you can read the code in the same order the
+Bitcoin flows execute.
+
+Flow overview (what calls what):
+
+- `start()` bootstraps the wallet, picks the next vault index, builds the vault
+  and backup and prints tx ids (`descriptors/rewind2/index.ts`).
+- `getVaultContext()` computes deterministic outputs and fee targets; then
+  `createVault()` builds the vault/trigger/panic PSBTs
+  (`descriptors/rewind2/vaults.ts`).
+- `createOpReturnBackup()` or `createInscriptionBackup()` serialize the payload
+  and build the on-chain backup transaction(s) (`descriptors/rewind2/vaults.ts`).
+- `recoverAndBroadcastCpfpPackage()` recovers the pre-signed parent from the
+  on-chain backup (the trigger or panic txs), builds the CPFP child and submits
+  the parent+child package for relay (`descriptors/rewind2/index.ts`).
+- `fetchVaultParentsFromBackup()` scans chain history, extracts the backup
+  payload and decrypts the parents (`descriptors/rewind2/backupRecovery.ts`).
+
+Supporting modules:
+
+- `getSeedDerivedCipherKey()` derives the cipher key from the seed (signature
+  of `Satoshi Nakamoto` → SHA256) and `getManagedChacha()` handles
+  XChaCha20-Poly1305 (`descriptors/rewind2/cipher.ts`).
+- `vaultSizes.ts` encodes size estimates used for fee reservation and sanity
+  checks (`descriptors/rewind2/vaultSizes.ts`).
+- `createInscriptionScript()` builds the ord envelope and chunks large payloads
+  into 520-byte pushes (`descriptors/rewind2/inscriptions.ts`).

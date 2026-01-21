@@ -190,7 +190,7 @@ const logPackageResult = async ({
   return true;
 };
 
-const pushParentWithCpfp = async (label: 'trigger' | 'panic') => {
+const recoverAndBroadcastCpfpPackage = async (label: 'trigger' | 'panic') => {
   if (!vaultState) {
     Log(`⚠️ No vault exists yet. Run the playground first.`);
     return false;
@@ -653,10 +653,11 @@ const startNode = async () => {
     });
     if (action === 'Exit') break;
     if (action === 'Push trigger/unvault') {
-      triggerSuccessfullyPushed = await pushParentWithCpfp('trigger');
+      triggerSuccessfullyPushed =
+        await recoverAndBroadcastCpfpPackage('trigger');
     }
     if (action === 'Push panic') {
-      panicSuccessfullyPushed = await pushParentWithCpfp('panic');
+      panicSuccessfullyPushed = await recoverAndBroadcastCpfpPackage('panic');
     }
   }
   explorer.close();
@@ -672,10 +673,10 @@ if (isWeb) {
       await start(backupType);
     },
     onPushTrigger: async () => {
-      return await pushParentWithCpfp('trigger');
+      return await recoverAndBroadcastCpfpPackage('trigger');
     },
     onPushPanic: async () => {
-      return await pushParentWithCpfp('panic');
+      return await recoverAndBroadcastCpfpPackage('panic');
     }
   });
 } else {
