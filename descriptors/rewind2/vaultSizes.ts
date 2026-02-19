@@ -2,16 +2,18 @@
 import { encodingLength as pushdataEncodingLength } from 'pushdata-bitcoin';
 import { encodingLength } from 'varuint-bitcoin';
 
+const textEncoder = new TextEncoder();
+
 const uniqueSorted = (values: number[]) =>
   values
     .filter((value, index, array) => array.indexOf(value) === index)
     .sort((a, b) => a - b);
 
 export const INSCRIPTION_CONTENT_TYPE = 'application/vnd.rewindbitcoin';
-const INSCRIPTION_CONTENT_TYPE_BYTES = Buffer.byteLength(
+const INSCRIPTION_CONTENT_TYPE_BYTES = textEncoder.encode(
   INSCRIPTION_CONTENT_TYPE
-);
-const INSCRIPTION_PROTOCOL_ID_BYTES = Buffer.byteLength('ord');
+).length;
+const INSCRIPTION_PROTOCOL_ID_BYTES = textEncoder.encode('ord').length;
 
 // https://github.com/bitcoin/bitcoin/blob/22bde74d1d8f861323eabb8dc60401bbf1226544/src/policy/policy.h#L36
 const MIN_STANDARD_TX_NONWITNESS_SIZE = 65;

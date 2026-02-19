@@ -13,8 +13,9 @@ import {
   opcodes,
   type PsbtTxInput
 } from 'bitcoinjs-lib';
-import type { PsbtInput } from 'bip174/src/lib/interfaces';
 
+import type { PsbtInput, Bip32Derivation } from 'bip174';
+import { concat, fromHex, fromUtf8 } from 'uint8array-tools';
 interface PsbtInputExtended extends PsbtInput, PsbtTxInput {}
 interface XOnlyPointAddTweakResult {
   parity: 1 | 0;
@@ -50,57 +51,51 @@ interface TinySecp256k1Interface {
 
 import { encode, encodingLength } from 'varuint-bitcoin';
 
-const encoder = new TextEncoder();
 const MAX_TAPSCRIPT_ELEMENT_BYTES = 520;
 
-function reverseBuffer(buffer: Buffer): Buffer {
-  if (buffer.length < 1) return buffer;
-  let j = buffer.length - 1;
+function reverseBytes(bytes: Uint8Array): Uint8Array {
+  if (bytes.length < 1) return bytes;
+  const copy = Uint8Array.from(bytes);
+  let j = copy.length - 1;
   let tmp = 0;
-  for (let i = 0; i < buffer.length / 2; i++) {
-    tmp = buffer[i]!;
-    buffer[i] = buffer[j]!;
-    buffer[j] = tmp;
+  for (let i = 0; i < copy.length / 2; i++) {
+    tmp = copy[i]!;
+    copy[i] = copy[j]!;
+    copy[j] = tmp;
     j--;
   }
-  return buffer;
+  return copy;
 }
 /** Helper: convert full pubkey to x-only */
-const toXOnly = (pubKey: Buffer): Buffer =>
+const toXOnly = (pubKey: Uint8Array): Uint8Array =>
   pubKey.length === 32 ? pubKey : pubKey.subarray(1, 33);
 
 /** Helper: serialize witness stack into finalScriptWitness */
-function witnessStackToScriptWitness(witness: Buffer[]): Buffer {
-  let buffer = Buffer.allocUnsafe(0);
-
-  function writeSlice(slice: Buffer): void {
-    buffer = Buffer.concat([buffer, Buffer.from(slice)]);
-  }
+function witnessStackToScriptWitness(witness: Uint8Array[]): Uint8Array {
+  const chunks: Uint8Array[] = [];
 
   function writeVarInt(i: number): void {
-    const currentLen = buffer.length;
-    const varintLen = encodingLength(i);
-
-    buffer = Buffer.concat([buffer, Buffer.allocUnsafe(varintLen)]);
-    encode(i, buffer, currentLen);
+    const varintBytes = new Uint8Array(encodingLength(i));
+    encode(i, varintBytes, 0);
+    chunks.push(varintBytes);
   }
 
-  function writeVarSlice(slice: Buffer): void {
+  function writeVarSlice(slice: Uint8Array): void {
     writeVarInt(slice.length);
-    writeSlice(slice);
+    chunks.push(slice);
   }
 
-  function writeVector(vector: Buffer[]): void {
+  function writeVector(vector: Uint8Array[]): void {
     writeVarInt(vector.length);
     vector.forEach(writeVarSlice);
   }
 
   writeVector(witness);
 
-  return buffer;
+  return concat(chunks);
 }
 
-function vectorSize(someVector: Buffer[]): number {
+function vectorSize(someVector: Uint8Array[]): number {
   const length = someVector.length;
 
   return (
@@ -111,7 +106,7 @@ function vectorSize(someVector: Buffer[]): number {
   );
 }
 
-function varSliceSize(someScript: Buffer): number {
+function varSliceSize(someScript: Uint8Array): number {
   const length = someScript.length;
 
   return encodingLength(length) + length;
@@ -120,7 +115,7 @@ function varSliceSize(someScript: Buffer): number {
 /** Content description for an inscription */
 export interface InscriptionData {
   contentType: string;
-  content: Buffer;
+  content: Uint8Array;
 }
 
 /** Build the TapScript leaf that carries the inscription */
@@ -128,11 +123,11 @@ function createInscriptionScript({
   xOnlyPublicKey,
   inscription
 }: {
-  xOnlyPublicKey: Buffer;
+  xOnlyPublicKey: Uint8Array;
   inscription: InscriptionData;
-}): (number | Buffer)[] {
-  const protocolId = Buffer.from(encoder.encode('ord'));
-  const contentChunks: Buffer[] = [];
+}): (number | Uint8Array)[] {
+  const protocolId = fromUtf8('ord');
+  const contentChunks: Uint8Array[] = [];
   for (
     let offset = 0;
     offset < inscription.content.length;
@@ -142,7 +137,7 @@ function createInscriptionScript({
       offset,
       offset + MAX_TAPSCRIPT_ELEMENT_BYTES
     );
-    contentChunks.push(Buffer.from(chunk));
+    contentChunks.push(chunk);
   }
 
   return [
@@ -153,7 +148,7 @@ function createInscriptionScript({
     protocolId,
     1,
     1,
-    Buffer.from(encoder.encode(inscription.contentType)),
+    fromUtf8(inscription.contentType),
     opcodes['OP_0']!,
     ...contentChunks,
     opcodes['OP_ENDIF']!
@@ -161,31 +156,9 @@ function createInscriptionScript({
 }
 
 /**
- * Optional BIP32 derivation metadata that allows PSBT BIP32 signing.
- * This information is added to the PSBT input as `tapBip32Derivation`
- * so that signers like descriptors.signers.signBIP32 can use it.
- */
-interface Bip32Derivation {
-  /**
-   * Master fingerprint of the BIP32 root key.
-   */
-  masterFingerprint: Buffer;
-
-  /**
-   * Absolute BIP32 path string, for example "m/86'/0'/0'/0/0".
-   */
-  path: string;
-
-  /**
-   * Full 33-byte compressed public key derived at `path`.
-   */
-  pubkey: Buffer;
-}
-
-/**
  * Factory similar in spirit to DescriptorsFactory:
  *
- *   export function InscriptionFactory(ecc: TinySecp256k1Interface) { ... }
+ *   export function InscriptionsFactory(ecc: TinySecp256k1Interface) { ... }
  */
 export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
   // Required for Taproot in bitcoinjs-lib
@@ -197,15 +170,15 @@ export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
    */
   class Inscription {
     readonly contentType: string; //F.ex.: 'text/plain;charset=utf-8'
-    readonly content: Buffer;
+    readonly content: Uint8Array;
     readonly network: Network;
 
     // Private internal state
-    #xOnlyPubKey: Buffer; // 32-byte x-only internal key
-    #inscriptionScript: (number | Buffer)[];
-    #outputScript: Buffer;
+    #xOnlyPubKey: Uint8Array; // 32-byte x-only internal key
+    #inscriptionScript: (number | Uint8Array)[];
+    #outputScript: Uint8Array;
     #payment: ReturnType<typeof payments.p2tr>;
-    #controlBlock: Buffer;
+    #controlBlock: Uint8Array;
     #bip32Derivation?: Bip32Derivation;
 
     constructor({
@@ -224,14 +197,14 @@ export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
       /**
        * Raw content of the inscription.
        */
-      content: Buffer;
+      content: Uint8Array;
 
       /**
        * Internal Taproot public key (33-byte compressed or 32-byte x-only).
        * The x-only form is used inside the TapScript and in Taproot PSBT fields.
        * Pass either internalPubKey (for ECPair signing) or bip32Derivation
        */
-      internalPubKey?: Buffer;
+      internalPubKey?: Uint8Array;
 
       /**
        * Bitcoin network.
@@ -319,7 +292,7 @@ export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
      * Adds an output that locks `value` sats into the Taproot script
      * that carries this inscription.
      */
-    updatePsbtAsOutput({ psbt, value }: { psbt: Psbt; value: number }): void {
+    updatePsbtAsOutput({ psbt, value }: { psbt: Psbt; value: bigint }): void {
       if (!this.#payment.output) {
         throw new Error('Missing Taproot output script');
       }
@@ -377,7 +350,7 @@ export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
        * Value of the previous output in satoshis.
        * Required if txHex is not provided.
        */
-      value?: number;
+      value?: bigint;
 
       /**
        * Index of the output being spent in the previous transaction.
@@ -396,7 +369,7 @@ export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
       }
 
       let prevTxId: string;
-      let prevValue: number;
+      let prevValue: bigint;
 
       if (txHex) {
         const tx = Transaction.fromHex(txHex);
@@ -423,7 +396,7 @@ export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
       };
 
       const input: PsbtInputExtended = {
-        hash: reverseBuffer(Buffer.from(prevTxId, 'hex')),
+        hash: reverseBytes(fromHex(prevTxId)),
         index: vout,
         sequence,
         witnessUtxo: {
@@ -453,7 +426,7 @@ export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
         ];
       }
 
-      psbt.addInput(input);
+      psbt.addInput(input as PsbtTxInput);
       const inputIndex = psbt.data.inputs.length - 1;
 
       /**
@@ -480,9 +453,7 @@ export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
         }
 
         const witness = [sig, this.#outputScript, this.#controlBlock];
-        input.finalScriptWitness = witnessStackToScriptWitness(
-          witness as Buffer[]
-        );
+        input.finalScriptWitness = witnessStackToScriptWitness(witness);
 
         if (validate) {
           // Add additional validation logic here if desired.
@@ -496,7 +467,7 @@ export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
       // Non-segwit: (txid:32) + (vout:4) + (sequence:4) + (script_len:1)
       const NON_WITNESS_WEIGHT = (32 + 4 + 4 + 1) * 4; // 164
 
-      const sig = Buffer.alloc(64); // dummy Schnorr sig
+      const sig = new Uint8Array(64); // dummy Schnorr sig
       const witness = [sig, this.#outputScript, this.#controlBlock];
 
       const witnessBytes = vectorSize(witness);
@@ -531,7 +502,7 @@ export function InscriptionsFactory(ecc: TinySecp256k1Interface) {
     /**
      * Returns this `Output`'s scriptPubKey.
      */
-    getScriptPubKey(): Buffer {
+    getScriptPubKey(): Uint8Array {
       if (!this.#payment.output)
         throw new Error(`Error: could extract output.script from the payment`);
       return this.#payment.output;

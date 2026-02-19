@@ -1,5 +1,5 @@
 const LOCK_BLOCKS = 2;
-const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
+const P2A_SCRIPT = fromHex('51024e73');
 const VAULT_PURPOSE = 1073;
 const MIN_RELAY_FEE_RATE = 0.1;
 // P2A input weight = base input (36 prevout + 1 scriptLen + 4 sequence) * 4
@@ -26,13 +26,8 @@ export type UtxosData = Array<{
   output: OutputInstance;
 }>;
 
-import {
-  networks,
-  Psbt,
-  Transaction,
-  type Network,
-  payments
-} from 'bitcoinjs-lib';
+import { Psbt, Transaction, type Network, payments } from 'bitcoinjs-lib';
+import { concat, fromHex, fromUtf8 } from 'uint8array-tools';
 import {
   INSCRIPTION_BACKUP_TX_VBYTES,
   INSCRIPTION_COMMIT_BACKUP_TX_VBYTES,
@@ -54,9 +49,13 @@ import {
 const { Output, parseKeyExpression } = DescriptorsFactory(secp256k1);
 import type { BIP32Interface } from 'bip32';
 import { encode as encodeVarInt, encodingLength } from 'varuint-bitcoin';
-import { compilePolicy } from '@bitcoinerlab/miniscript';
+import {
+  compilePolicy,
+  ready as miniscriptPoliciesReady
+} from '@bitcoinerlab/miniscript-policies';
 import { InscriptionsFactory } from './inscriptions';
 import { getManagedChacha, getSeedDerivedCipherKey } from './cipher';
+import { coinTypeFromNetwork } from './networkUtils';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import {
   coinselect,
@@ -70,12 +69,12 @@ const getInscriptionCommitOutputBackupPath = (
   network: Network,
   index: number
 ): string => {
-  const coinType = network === networks.bitcoin ? "0'" : "1'";
-  return `m/86'/${coinType}/0'/9/${index}`;
+  const coinType = coinTypeFromNetwork(network);
+  return `m/86'/${coinType}'/0'/9/${index}`;
 };
 
 export const getVaultOriginPath = (network: Network) =>
-  `/${VAULT_PURPOSE}'/${network === networks.bitcoin ? 0 : 1}'/0'`;
+  `/${VAULT_PURPOSE}'/${coinTypeFromNetwork(network)}'/0'`;
 
 export const getBackupDescriptor = ({
   masterNode,
@@ -103,18 +102,18 @@ const serializeVaultEntry = ({
   triggerTx,
   panicTx
 }: {
-  triggerTx: Buffer;
-  panicTx: Buffer;
+  triggerTx: Uint8Array;
+  panicTx: Uint8Array;
 }) => {
   const ENTRY_VERSION = 1;
   const encVI = (n: number) => {
-    const b = Buffer.allocUnsafe(encodingLength(n));
+    const b = new Uint8Array(encodingLength(n));
     encodeVarInt(n, b);
     return b;
   };
 
-  return Buffer.concat([
-    Buffer.from([ENTRY_VERSION]),
+  return concat([
+    Uint8Array.of(ENTRY_VERSION),
     encVI(triggerTx.length),
     triggerTx,
     encVI(panicTx.length),
@@ -129,19 +128,19 @@ const buildEncryptedVaultContent = async ({
   network,
   vaultIndex
 }: {
-  triggerTx: Buffer;
-  panicTx: Buffer;
+  triggerTx: Uint8Array;
+  panicTx: Uint8Array;
   masterNode: BIP32Interface;
   network: Network;
   vaultIndex: number;
 }) => {
   const entry = serializeVaultEntry({ triggerTx, panicTx });
-  const header = Buffer.from('REW'); // Magic
+  const header = fromUtf8('REW'); // Magic
   const vaultPath = `m${getVaultOriginPath(network)}/${vaultIndex}`;
   const cipherKey = await getSeedDerivedCipherKey({ vaultPath, masterNode });
   const cipher = await getManagedChacha(cipherKey);
-  const encryptedEntry = Buffer.from(cipher.encrypt(entry));
-  return Buffer.concat([header, encryptedEntry]);
+  const encryptedEntry = cipher.encrypt(entry);
+  return concat([header, encryptedEntry]);
 };
 
 const createTriggerDescriptor = ({
@@ -178,17 +177,17 @@ const coinselectVaultUtxosData = ({
   vaultedAmount,
   backupOutput,
   backupCost,
-  anchorReserve = 0,
+  anchorReserve = 0n,
   anchorReserveOutput,
   changeOutput,
   feeRate
 }: {
   utxosData: UtxosData;
   vaultOutput: OutputInstance;
-  vaultedAmount: number | 'MAX_FUNDS';
+  vaultedAmount: bigint | 'MAX_FUNDS';
   backupOutput?: OutputInstance;
-  backupCost?: number;
-  anchorReserve?: number;
+  backupCost?: bigint;
+  anchorReserve?: bigint;
   anchorReserveOutput?: OutputInstance;
   changeOutput: OutputInstance;
   feeRate: number;
@@ -196,7 +195,7 @@ const coinselectVaultUtxosData = ({
   const utxos = getOutputsWithValue(utxosData);
   if (!utxos.length) return 'NO_UTXOS';
   if (
-    typeof vaultedAmount === 'number' &&
+    typeof vaultedAmount === 'bigint' &&
     vaultedAmount <= dustThreshold(vaultOutput)
   )
     return `VAULT OUT BELOW DUST: ${vaultedAmount} <= ${dustThreshold(vaultOutput)}`;
@@ -206,7 +205,7 @@ const coinselectVaultUtxosData = ({
   } else if (backupOutput || backupCost !== undefined) {
     throw new Error('backupOutput and backupCost must be provided together');
   }
-  const shouldReserveAnchor = anchorReserve > 0;
+  const shouldReserveAnchor = anchorReserve > 0n;
   if (shouldReserveAnchor && !anchorReserveOutput)
     throw new Error('anchorReserveOutput required when anchorReserve is set');
   if (!shouldReserveAnchor && anchorReserveOutput)
@@ -298,11 +297,13 @@ const coinselectVaultUtxosData = ({
   };
 };
 
-const getBackupCost = (backupType: BackupType, feeRate: number) => {
+const getBackupCost = (backupType: BackupType, feeRate: number): bigint => {
   if (backupType === 'INSCRIPTION')
-    return Math.ceil(Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate);
+    return BigInt(
+      Math.ceil(Math.max(...INSCRIPTION_BACKUP_TX_VBYTES) * feeRate)
+    );
   if (backupType === 'OP_RETURN_TRUC' || backupType === 'OP_RETURN_V2')
-    return Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate);
+    return BigInt(Math.ceil(Math.max(...OP_RETURN_BACKUP_TX_VBYTES) * feeRate));
   throw new Error('backupCost unset');
 };
 
@@ -311,7 +312,7 @@ const getUtxosValue = (utxosData: UtxosData) =>
     const out = utxo.tx.outs[utxo.vout];
     if (!out) throw new Error('Invalid utxo');
     return sum + out.value;
-  }, 0);
+  }, 0n);
 
 /**
  * Builds deterministic vault outputs and runs coin selection for them.
@@ -325,7 +326,7 @@ export const getVaultContext = ({
   masterNode,
   randomMasterNode,
   changeDescriptorWithIndex,
-  anchorReserve = 0,
+  anchorReserve = 0n,
   anchorReserveDescriptorWithIndex,
   vaultIndex,
   backupType,
@@ -338,17 +339,17 @@ export const getVaultContext = ({
   masterNode: BIP32Interface;
   randomMasterNode: BIP32Interface;
   changeDescriptorWithIndex: { descriptor: string; index: number };
-  anchorReserve?: number;
+  anchorReserve?: bigint;
   anchorReserveDescriptorWithIndex?: { descriptor: string; index: number };
   vaultIndex: number;
   backupType: BackupType;
   feeRate: number;
-  vaultedAmount: number | 'MAX_FUNDS';
+  vaultedAmount: bigint | 'MAX_FUNDS';
   utxosData: UtxosData;
   shiftFeesToBackupEnd?: boolean;
   network: Network;
 }) => {
-  const randomOriginPath = `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`;
+  const randomOriginPath = `/84'/${coinTypeFromNetwork(network)}'/0'`;
   const randomKeyPath = `/0/0`;
   const randomKey = keyExpressionBIP32({
     masterNode: randomMasterNode,
@@ -364,7 +365,7 @@ export const getVaultContext = ({
     network
   });
   const changeOutput = new Output({ ...changeDescriptorWithIndex, network });
-  const shouldReserveAnchor = anchorReserve > 0;
+  const shouldReserveAnchor = anchorReserve > 0n;
   let anchorReserveOutput: OutputInstance | undefined;
   if (shouldReserveAnchor) {
     if (!anchorReserveDescriptorWithIndex)
@@ -394,7 +395,7 @@ export const getVaultContext = ({
   if (shiftFeesToBackupEnd && typeof selected !== 'string') {
     const minRelayFeeRate =
       backupType === 'OP_RETURN_TRUC' ? 0 : MIN_RELAY_FEE_RATE;
-    const minRelayFee = Math.ceil(selected.vsize * minRelayFeeRate);
+    const minRelayFee = BigInt(Math.ceil(selected.vsize * minRelayFeeRate));
     if (selected.fee < minRelayFee)
       throw new Error(
         `Coinselected fee (${selected.fee}) below min relay fee (${minRelayFee})`
@@ -429,7 +430,7 @@ export const getVaultContext = ({
   };
 };
 
-export const createVault = ({
+export const createVault = async ({
   vaultedAmount,
   unvaultKey,
   feeRate,
@@ -438,14 +439,14 @@ export const createVault = ({
   randomMasterNode,
   coldAddress,
   changeDescriptorWithIndex,
-  anchorReserve = 0,
+  anchorReserve = 0n,
   anchorReserveDescriptorWithIndex,
   vaultIndex,
   backupType,
   shiftFeesToBackupEnd = false,
   network
 }: {
-  vaultedAmount: number;
+  vaultedAmount: bigint;
   /** The unvault key expression that must be used to create triggerDescriptor */
   unvaultKey: string;
   feeRate: number;
@@ -454,13 +455,14 @@ export const createVault = ({
   randomMasterNode: BIP32Interface;
   coldAddress: string;
   changeDescriptorWithIndex: { descriptor: string; index: number };
-  anchorReserve?: number;
+  anchorReserve?: bigint;
   anchorReserveDescriptorWithIndex?: { descriptor: string; index: number };
   vaultIndex: number;
   backupType: BackupType;
   shiftFeesToBackupEnd?: boolean;
   network: Network;
 }) => {
+  await miniscriptPoliciesReady;
   const {
     randomKey,
     randomPubKey,
@@ -493,7 +495,7 @@ export const createVault = ({
     throw new Error("coinselect first output should be the vault's output");
   if (vaultTargets[BACKUP_OUTPUT_INDEX]?.output !== backupOutput)
     throw new Error('coinselect second output should be the backup output');
-  const shouldReserveAnchor = anchorReserve > 0;
+  const shouldReserveAnchor = anchorReserve > 0n;
   if (
     shouldReserveAnchor &&
     vaultTargets[ANCHOR_RESERVE_OUTPUT_INDEX]?.output !== anchorReserveOutput
@@ -571,7 +573,7 @@ export const createVault = ({
     txHex: psbtVault.extractTransaction().toHex(),
     vout: 0
   });
-  psbtTrigger.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
+  psbtTrigger.addOutput({ script: P2A_SCRIPT, value: 0n }); //vout: 0
   triggerOutputPanicPath.updatePsbtAsOutput({
     psbt: psbtTrigger,
     value: vaultedAmount //zero fee
@@ -587,7 +589,7 @@ export const createVault = ({
 
   const psbtPanic = new Psbt({ network });
   psbtPanic.setVersion(3);
-  psbtPanic.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
+  psbtPanic.addOutput({ script: P2A_SCRIPT, value: 0n }); //vout: 0
   const panicInputFinalizer = triggerOutputPanicPath.updatePsbtAsInput({
     psbt: psbtPanic,
     txHex: psbtTrigger.extractTransaction().toHex(),
@@ -669,7 +671,7 @@ export const createOpReturnBackup = async ({
   if (!embed.output) throw new Error('Could not create embed output');
   psbtBackup.addOutput({
     script: embed.output,
-    value: 0
+    value: 0n
   });
 
   signers.signBIP32({ psbt: psbtBackup, masterNode });
@@ -734,11 +736,11 @@ export const createInscriptionBackup = async ({
   if (!backupOut) throw new Error('Backup output not found in vault tx');
   const backupOutputValue = backupOut.value;
   const commitFeeRate = shiftFeesToBackupEnd ? MIN_RELAY_FEE_RATE : feeRate;
-  const commitFeeTarget = Math.ceil(
-    Math.max(...INSCRIPTION_COMMIT_BACKUP_TX_VBYTES) * commitFeeRate
+  const commitFeeTarget = BigInt(
+    Math.ceil(Math.max(...INSCRIPTION_COMMIT_BACKUP_TX_VBYTES) * commitFeeRate)
   );
   const commitOutputValue = backupOutputValue - commitFeeTarget;
-  if (commitOutputValue <= 0)
+  if (commitOutputValue <= 0n)
     throw new Error('Insufficient vault backup output for reveal fee');
 
   const psbtCommit = new Psbt({ network });
@@ -763,11 +765,11 @@ export const createInscriptionBackup = async ({
     txHex: commitTx.toHex(),
     vout: 0
   });
-  const revealGarbage = Buffer.alloc(INSCRIPTION_REVEAL_GARBAGE_BYTES);
+  const revealGarbage = new Uint8Array(INSCRIPTION_REVEAL_GARBAGE_BYTES);
   const embed = payments.embed({ data: [revealGarbage] });
   if (!embed.output)
     throw new Error('Could not create reveal OP_RETURN output');
-  psbtReveal.addOutput({ script: embed.output, value: 0 });
+  psbtReveal.addOutput({ script: embed.output, value: 0n });
   // OP_RETURN payload keeps the reveal tx above the min relay size.
   signers.signBIP32({ psbt: psbtReveal, masterNode });
   revealInputFinalizer({ psbt: psbtReveal });
@@ -803,9 +805,9 @@ export const createP2ACpfpChild = ({
       psbt: Psbt;
       tx: Transaction;
       childVsize: number;
-      targetFee: number;
-      outputValue: number;
-      reserveValue: number;
+      targetFee: bigint;
+      outputValue: bigint;
+      reserveValue: bigint;
     }
   | string => {
   if (!anchorReserveUtxosData.length) return 'NO_ANCHOR_RESERVE_UTXOS';
@@ -815,7 +817,7 @@ export const createP2ACpfpChild = ({
     outputValue,
     selectedUtxosData
   }: {
-    outputValue: number;
+    outputValue: bigint;
     selectedUtxosData: UtxosData;
   }) => {
     const psbt = new Psbt({ network });
@@ -823,7 +825,7 @@ export const createP2ACpfpChild = ({
     psbt.addInput({
       hash: parentTx.getId(),
       index: 0,
-      witnessUtxo: { script: P2A_SCRIPT, value: 0 }
+      witnessUtxo: { script: P2A_SCRIPT, value: 0n }
     });
     const anchorInputFinalizers = selectedUtxosData.map(utxo =>
       utxo.output.updatePsbtAsInput({
@@ -835,8 +837,8 @@ export const createP2ACpfpChild = ({
     anchorReserveOutput.updatePsbtAsOutput({ psbt, value: outputValue });
     signers.signBIP32({ psbt, masterNode });
     psbt.finalizeInput(0, () => ({
-      finalScriptSig: Buffer.alloc(0),
-      finalScriptWitness: Buffer.from([0x00])
+      finalScriptSig: new Uint8Array(0),
+      finalScriptWitness: Uint8Array.of(0)
     }));
     anchorInputFinalizers.forEach(finalizer => finalizer({ psbt }));
     const tx = psbt.extractTransaction();
@@ -856,19 +858,21 @@ export const createP2ACpfpChild = ({
 
   const dust = dustThreshold(anchorReserveOutput);
   const sortByValueAsc = (a: UtxosData[number], b: UtxosData[number]) => {
-    const aValue = a.tx.outs[a.vout]?.value ?? 0;
-    const bValue = b.tx.outs[b.vout]?.value ?? 0;
-    return aValue - bValue;
+    const aValue = a.tx.outs[a.vout]?.value ?? 0n;
+    const bValue = b.tx.outs[b.vout]?.value ?? 0n;
+    if (aValue === bValue) return 0;
+    return aValue < bValue ? -1 : 1;
   };
   const sortByValueDesc = (a: UtxosData[number], b: UtxosData[number]) => {
-    const aValue = a.tx.outs[a.vout]?.value ?? 0;
-    const bValue = b.tx.outs[b.vout]?.value ?? 0;
-    return bValue - aValue;
+    const aValue = a.tx.outs[a.vout]?.value ?? 0n;
+    const bValue = b.tx.outs[b.vout]?.value ?? 0n;
+    if (aValue === bValue) return 0;
+    return bValue < aValue ? -1 : 1;
   };
   const attemptSelection = (sortedUtxosData: UtxosData) => {
     const selectedUtxosData: UtxosData = [];
-    let targetFee = 0;
-    let outputValue = 0;
+    let targetFee = 0n;
+    let outputValue = 0n;
     let childVsize = 0;
     for (const candidate of sortedUtxosData) {
       selectedUtxosData.push(candidate);
@@ -878,13 +882,13 @@ export const createP2ACpfpChild = ({
           error: `TRUC_CHILD_TOO_LARGE: ${childVsize} > ${MAX_TRUC_CHILD_VSIZE}`
         };
       const reserveValue = getUtxosValue(selectedUtxosData);
-      targetFee = Math.ceil((parentVsize + childVsize) * feeRate);
+      targetFee = BigInt(Math.ceil((parentVsize + childVsize) * feeRate));
       outputValue = reserveValue - targetFee;
       if (outputValue > dust)
         return { selectedUtxosData, targetFee, outputValue, childVsize };
     }
     return {
-      error: `ANCHOR_CHANGE_BELOW_DUST: ${Math.max(outputValue, 0)} <= ${dust}`
+      error: `ANCHOR_CHANGE_BELOW_DUST: ${outputValue > 0n ? outputValue : 0n} <= ${dust}`
     };
   };
   // First try consolidation by spending smaller reserve UTXOs; if the child
