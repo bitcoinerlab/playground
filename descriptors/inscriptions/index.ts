@@ -5,10 +5,11 @@ import './codesandboxFixes';
 import { readFileSync, writeFileSync } from 'fs';
 import * as descriptors from '@bitcoinerlab/descriptors';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
-import { networks, Psbt, Transaction } from 'bitcoinjs-lib';
+import { networks, Psbt } from 'bitcoinjs-lib';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { EsploraExplorer } from '@bitcoinerlab/explorer';
 import { InscriptionsFactory } from './inscriptions';
+import { fromUtf8 } from 'uint8array-tools';
 
 const isWeb = typeof window !== 'undefined';
 const Log = (message: string) => {
@@ -32,7 +33,14 @@ const { wpkhBIP32 } = descriptors.scriptExpressions;
 const { Output, BIP32, ECPair } = descriptors.DescriptorsFactory(secp256k1);
 const { Inscription } = InscriptionsFactory(secp256k1);
 const network = networks.regtest;
-const FEE = 500;
+const FEE = 500n;
+
+type AddressUtxo = {
+  txid: string;
+  vout: number;
+  value: number;
+  status: { confirmed: boolean };
+};
 
 const start = async () => {
   let mnemonic; //Let's create a basic wallet:
@@ -69,9 +77,12 @@ Every reload reuses the same mnemonic for convenience.`);
   Log(`🔍 Checking existing balance...`);
   const sourceAddressInfo = await explorer.fetchAddress(sourceAddress);
   Log(`🔍 Wallet balance info: ${JSONf(sourceAddressInfo)}`);
-  let fundingtTxId;
+  let fundingTxId: string | undefined;
 
-  if (sourceAddressInfo.balance + sourceAddressInfo.unconfirmedBalance < FEE) {
+  if (
+    sourceAddressInfo.balance + sourceAddressInfo.unconfirmedBalance <
+    Number(2n * FEE)
+  ) {
     Log(`💰 The wallet is empty. Let's request some funds...`);
     //New or empty wallet. Let's prepare the faucet request:
     const formData = new URLSearchParams();
@@ -92,47 +103,51 @@ Every reload reuses the same mnemonic for convenience.`);
         `Faucet rate-limit: this address has already received sats recently.
 Please retry (max 2 faucet requests per IP/address per minute).`
       );
-    fundingtTxId = faucetJson.txId;
+    fundingTxId = faucetJson.txId;
   } else {
     Log(`💰 Existing balance detected. Skipping faucet.`);
-    // Wallet has funds. Find the last transaction that actually pays to this script.
-    const txHistory = await explorer.fetchTxHistory({ address: sourceAddress });
-    const spkHex = sourceOutput.getScriptPubKey().toString('hex');
-
-    for (const { txId } of txHistory.reverse()) {
-      const tx = Transaction.fromHex(await explorer.fetchTx(txId));
-      const vout = tx.outs.findIndex(o => o.script.toString('hex') === spkHex);
-      if (vout !== -1) {
-        fundingtTxId = txId;
-        break;
-      }
-    }
   }
+
+  let sourceUtxo: AddressUtxo | undefined;
+  while (true) {
+    const fetchedUtxos = (await (
+      await fetch(`${ESPLORA_API}/address/${sourceAddress}/utxo`)
+    ).json()) as AddressUtxo[];
+
+    if (fetchedUtxos.length > 0) {
+      sourceUtxo = fetchedUtxos.reduce((best, utxo) =>
+        utxo.value > best.value ? utxo : best
+      );
+      break;
+    }
+
+    if (fundingTxId)
+      Log(
+        `⏳ Waiting for the funding tx <a href="${EXPLORER}/${fundingTxId}" target="_blank">${fundingTxId}</a> to become spendable...`
+      );
+    else Log(`⏳ Waiting for a spendable UTXO at ${sourceAddress}...`);
+    await new Promise(r => setTimeout(r, 1000)); //sleep 1s
+  }
+
+  if (!sourceUtxo) throw new Error('Could not find a spendable UTXO');
 
   let fundingTxHex = '';
   while (true) {
     // Ping the esplora for the txHex (may need to wait until the tx is indexed)
     try {
-      fundingTxHex = await explorer.fetchTx(fundingtTxId);
+      fundingTxHex = await explorer.fetchTx(sourceUtxo.txid);
       break;
     } catch (err) {
       void err;
       Log(
-        `⏳ Waiting for the funding tx <a href="${EXPLORER}/${fundingtTxId}" target="_blank">${fundingtTxId}</a> to be indexed...`
+        `⏳ Waiting for the funding tx <a href="${EXPLORER}/${sourceUtxo.txid}" target="_blank">${sourceUtxo.txid}</a> to be indexed...`
       );
     }
     await new Promise(r => setTimeout(r, 1000)); //sleep 1s
   }
 
-  const fundingTransaction = Transaction.fromHex(fundingTxHex);
-  const fundingVout = fundingTransaction.outs.findIndex(
-    txOut =>
-      txOut.script.toString('hex') ===
-      sourceOutput.getScriptPubKey().toString('hex')
-  );
-  if (!fundingTransaction.outs[fundingVout]) throw new Error('Invalid vout');
-
-  const sourceValue = fundingTransaction.outs[fundingVout].value;
+  const fundingVout = sourceUtxo.vout;
+  const sourceValue = BigInt(sourceUtxo.value);
   Log(`💎 Initial value (sats): ${sourceValue}`);
 
   const inscriptionPair = ECPair.makeRandom();
@@ -142,17 +157,17 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   );
   const inscriptionOutput = new Inscription({
     contentType: 'text/plain;charset=utf-8',
-    content: Buffer.from('Hello world!'),
+    content: fromUtf8('Hello world!'),
     ...(SIGNER_TYPE === 'ECPAIR'
       ? { internalPubKey: inscriptionPair.publicKey }
       : {
-        bip32Derivation: {
-          masterFingerprint: inscriptionMasterNode.fingerprint,
-          path: "m/123'/0'/0'/0/0",
-          pubkey:
-            inscriptionMasterNode.derivePath("m/123'/0'/0'/0/0").publicKey
-        }
-      }),
+          bip32Derivation: {
+            masterFingerprint: inscriptionMasterNode.fingerprint,
+            path: "m/123'/0'/0'/0/0",
+            pubkey:
+              inscriptionMasterNode.derivePath("m/123'/0'/0'/0/0").publicKey
+          }
+        }),
     network
   });
 
@@ -181,7 +196,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   //give back the money to ourselves
   sourceOutput.updatePsbtAsOutput({
     psbt: revealPsbt,
-    value: sourceValue - 2 * FEE
+    value: sourceValue - 2n * FEE
   });
   if (SIGNER_TYPE === 'ECPAIR')
     descriptors.signers.signECPair({
