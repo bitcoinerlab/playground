@@ -58,3 +58,28 @@ if (
     originalPolyfill.call(this, targetObject, constructorOpt);
   };
 }
+
+// CodeSandbox workaround: its console serializer crashes on BigInt.
+(() => {
+  const methods = ['log', 'info', 'warn', 'error', 'debug'] as const;
+  const g = globalThis as typeof globalThis & { __csbBigIntConsolePatched?: boolean };
+  if (g.__csbBigIntConsolePatched) return;
+  g.__csbBigIntConsolePatched = true;
+  const sanitize = (value: unknown, seen = new WeakSet<object>()): unknown => {
+    if (typeof value === 'bigint') return `${value}n`;
+    if (value === null || typeof value !== 'object') return value;
+    if (seen.has(value as object)) return '[Circular]';
+    seen.add(value as object);
+    if (Array.isArray(value)) return value.map(v => sanitize(v, seen));
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = sanitize(v, seen);
+    }
+    return out;
+  };
+  for (const m of methods) {
+    const original = console[m].bind(console);
+    (console as any)[m] = (...args: unknown[]) =>
+      original(...args.map(arg => sanitize(arg)));
+  }
+})();
