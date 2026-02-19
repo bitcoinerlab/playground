@@ -27,6 +27,12 @@ npm run descriptors/legacy2segwit
 
 This will execute the code in `./descriptors/legacy2segwit/index.ts` and output the results.
 
+### Implementation notes
+
+- The playground code follows the `bitcoinjs-lib` v7 stack, so transaction and PSBT values are handled as `bigint`.
+- Miniscript policy compilation is done via `@bitcoinerlab/miniscript-policies`.
+- When deriving BIP44/BIP86 coin type from a `Network`, avoid object-reference checks and use field-based mainnet detection.
+
 ## Available Playgrounds
 
 Below is the full list of playgrounds included in this repository, with links to their corresponding guides on the BitcoinerLab site.

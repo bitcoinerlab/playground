@@ -3,7 +3,7 @@ const SIGNING_MESSAGE = 'Satoshi Nakamoto'; //Can be any, but don't change it
 
 import type { BIP32Interface } from 'bip32';
 import { sha256 } from '@noble/hashes/sha2';
-import { MessageFactory } from '@jl.landabaso/btcmessage';
+import { MessageFactory } from '@bitcoinerlab/btcmessage';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import {
@@ -31,10 +31,8 @@ export const getManagedChacha = async (key: Uint8Array) => {
 /*
  *  const PURPOSE = 1073;
  *  const VAULT_PATH = `m/${PURPOSE}'/<network>'/0'/<index>`;
- *  const vaultPath = VAULT_PATH.replace(
- *      '<network>',
- *      network === networks.bitcoin ? '0' : '1'
- *    ).replace('<index>', index.toString());
+ *  const vaultPath = VAULT_PATH.replace('<network>', coinTypeFromNetwork(network).toString())
+ *    .replace('<index>', index.toString());
  */
 
 export const getSeedDerivedCipherKey = async ({

@@ -6,12 +6,13 @@ import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
 import { mnemonicToSeedSync } from 'bip39';
 import { Psbt, networks } from 'bitcoinjs-lib';
+import { toHex } from 'uint8array-tools';
 const { pkhBIP32, wpkhBIP32 } = descriptors.scriptExpressions;
 const { Output, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 const network = networks.testnet;
 const EXPLORER = 'https://blockstream.info/testnet';
 const ESPLORA_API = 'https://blockstream.info/testnet/api';
-const FEE = 500;
+const FEE = 500n;
 
 //Let's create our software wallet with this mnemonic:
 const MNEMONIC =
@@ -38,10 +39,9 @@ console.log(`We start with:`, { address: legacyOutput.getAddress(), TXID });
   };
   const txOuts = txJson.vout;
   const vout = txOuts.findIndex(
-    txOut =>
-      txOut.scriptpubkey === legacyOutput.getScriptPubKey().toString('hex')
+    txOut => txOut.scriptpubkey === toHex(legacyOutput.getScriptPubKey())
   );
-  const initialValue = txOuts[vout]!.value; //This must be: 1679037
+  const initialValue = BigInt(txOuts[vout]!.value); //This must be: 1679037
   console.log('This is the utxo to spend :', { txHex, vout, initialValue });
 
   //Define the Segwit descriptor where we will move the funds:

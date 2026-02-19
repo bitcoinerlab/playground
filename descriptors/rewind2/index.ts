@@ -48,13 +48,14 @@ import {
   wait
 } from './utils';
 import { fetchVaultParentsFromBackup } from './backupRecovery';
+import { coinTypeFromNetwork } from './networkUtils';
 
 const FEE_RATE = 2.0;
 const VAULT_GAP_LIMIT = 20;
 const FAUCET_FETCH_RETRIES = 10;
 const FAUCET_FETCH_DELAY_MS = 1500;
 const SHIFT_FEES_TO_BACKUP_END = true;
-const ANCHOR_FEE_RESERVE_SATS = 10000;
+const ANCHOR_FEE_RESERVE_SATS = 10000n;
 
 const pickBackupType = () =>
   pickChoice(
@@ -314,7 +315,7 @@ Every reload reuses the same mnemonic for convenience.`);
   // wpkhBIP32 for keyPath /2/* would throw for non standard key, so genealize:
   const anchorReserveDescriptor = `wpkh(${keyExpressionBIP32({
     masterNode,
-    originPath: `/84'/${network === networks.bitcoin ? 0 : 1}'/0'`,
+    originPath: `/84'/${coinTypeFromNetwork(network)}'/0'`,
     keyPath: '/2/*'
   })})`;
   if (!descriptors[0] || !descriptors[1])
@@ -358,8 +359,8 @@ Every reload reuses the same mnemonic for convenience.`);
 
   let coinselectedVaultMaxFunds = vaultMaxFundsContext.selected;
 
-  let maxVaultableAmount;
-  if (typeof coinselectedVaultMaxFunds === 'string') maxVaultableAmount = 0;
+  let maxVaultableAmount: bigint;
+  if (typeof coinselectedVaultMaxFunds === 'string') maxVaultableAmount = 0n;
   else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
 
   Log(`ℹ️ Wallet balance: ${utxosAndBalance.balance}`);
@@ -440,7 +441,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     coinselectedVaultMaxFunds = vaultMaxFundsContext.selected;
     if (typeof coinselectedVaultMaxFunds === 'string') {
       Log(`The coinselector failed: ${coinselectedVaultMaxFunds}`);
-      maxVaultableAmount = 0;
+      maxVaultableAmount = 0n;
     } else maxVaultableAmount = coinselectedVaultMaxFunds.vaultedAmount;
 
     if (maxVaultableAmount < minVaultableAmount)
@@ -483,7 +484,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     keyPath: '/0'
   });
 
-  const vault = createVault({
+  const vault = await createVault({
     vaultedAmount: maxVaultableAmount, //Let's vault the max possible
     unvaultKey,
     feeRate: FEE_RATE,
@@ -508,21 +509,21 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const vaultTx = psbtVault.extractTransaction();
   const vaultInputValue = vault.vaultUtxosData.reduce(
-    (sum, utxo) => sum + (utxo.tx.outs[utxo.vout]?.value ?? 0),
-    0
+    (sum, utxo) => sum + (utxo.tx.outs[utxo.vout]?.value ?? 0n),
+    0n
   );
   const vaultOutputValue = vaultTx.outs.reduce(
     (sum, out) => sum + out.value,
-    0
+    0n
   );
   const vaultFee = vaultInputValue - vaultOutputValue;
-  const backupFeeShift = Math.max(
-    vault.backupOutputValue - vault.backupCost,
-    0
-  );
+  const backupFeeShift =
+    vault.backupOutputValue > vault.backupCost
+      ? vault.backupOutputValue - vault.backupCost
+      : 0n;
   Log(
     `💰 Vault tx fee (pure miner fee paid by the vault tx): ${vaultFee} sats${
-      backupFeeShift > 0
+      backupFeeShift > 0n
         ? ` (${backupFeeShift} sats shifted into the backup output)`
         : ''
     }`
@@ -532,7 +533,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   );
   Log(
     `💾 Backup output value reserved in vault tx: ${vault.backupOutputValue} sats (${
-      backupFeeShift > 0
+      backupFeeShift > 0n
         ? `${backupFeeShift} sats fee shift from vault tx + ${vault.backupCost} sats baseline`
         : 'no fee shift'
     })`

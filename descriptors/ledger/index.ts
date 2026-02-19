@@ -4,12 +4,16 @@
 import './codesandboxFixes';
 import * as ecc from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
-import { compilePolicy } from '@bitcoinerlab/miniscript';
+import {
+  compilePolicy,
+  ready as miniscriptPoliciesReady
+} from '@bitcoinerlab/miniscript-policies';
 import { Psbt, networks } from 'bitcoinjs-lib';
 import { mnemonicToSeedSync } from 'bip39';
+import { fromHex, toHex } from 'uint8array-tools';
 // @ts-ignore
 import { encode as olderEncode } from 'bip68';
-import { AppClient } from 'ledger-bitcoin';
+import { AppClient } from '@ledgerhq/ledger-bitcoin';
 const { Output, BIP32 } = descriptors.DescriptorsFactory(ecc);
 
 const EXPLORER = 'https://tape.rewindbitcoin.com/explorer';
@@ -29,10 +33,18 @@ const Log = (message: string) => {
 //Ledger is stateless. We store state in localStorage. Deserialize it if found:
 const ledgerStorage = isWeb && localStorage.getItem('ledger');
 const ledgerState = ledgerStorage
-  ? JSON.parse(ledgerStorage, (_key, val) =>
-      //JSON.parse does not know how to deal with Buffers. Let's show it:
-      val instanceof Object && val.type == 'Buffer' ? new Buffer(val.data) : val
-    )
+  ? JSON.parse(ledgerStorage, (_key, val) => {
+      if (
+        val !== null &&
+        typeof val === 'object' &&
+        'type' in val &&
+        val.type === 'Uint8Array' &&
+        typeof (val as { hex?: unknown }).hex === 'string'
+      ) {
+        return fromHex((val as { hex: string }).hex);
+      }
+      return val;
+    })
   : {};
 console.log('ledgerState:', { ...ledgerState });
 const BLOCKS = 5;
@@ -103,6 +115,7 @@ const start = async () => {
   const wpkhAddress = wpkhOutput.getAddress();
 
   //Now let's prepare the wsh utxo:
+  await miniscriptPoliciesReady;
   const { miniscript, issane } = compilePolicy(POLICY);
   if (!issane) throw new Error(`Error: miniscript not sane`);
   const ledgerKeyExpression = await descriptors.keyExpressionLedger({
@@ -141,14 +154,14 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
     let txHex = await (
       await fetch(`${ESPLORA_API}/tx/${wpkhUtxo?.[0].txid}/hex`)
     ).text();
-    let inputValue = wpkhUtxo[0].value;
+    let inputValue = BigInt(wpkhUtxo[0].value);
     psbtInputFinalizers.push(
       wpkhOutput.updatePsbtAsInput({ psbt, txHex, vout: wpkhUtxo[0].vout })
     );
     txHex = await (
       await fetch(`${ESPLORA_API}/tx/${wshUtxo?.[0].txid}/hex`)
     ).text();
-    inputValue += wshUtxo[0].value;
+    inputValue += BigInt(wshUtxo[0].value);
     psbtInputFinalizers.push(
       wshOutput.updatePsbtAsInput({ psbt, txHex, vout: wshUtxo[0].vout })
     );
@@ -163,7 +176,7 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
       network
     }).getAddress();
     //Be nice. Give the miners 1000 sats :)
-    psbt.addOutput({ address: finalAddress, value: inputValue - 1000 });
+    psbt.addOutput({ address: finalAddress, value: inputValue - 1000n });
 
     //Register Ledger policies of non-standard descriptors. Auto-skips if exists
     await descriptors.ledger.registerLedgerWallet({
@@ -203,7 +216,15 @@ may need to register the Policy (only once) and then accept spending 2 utxos.`);
     Log(`Fund them and <a href="javascript:start();">check again</a>.`);
   }
   //Save ledgerState to localStorage
-  if (isWeb) localStorage.setItem('ledger', JSON.stringify(ledgerState));
+  if (isWeb)
+    localStorage.setItem(
+      'ledger',
+      JSON.stringify(ledgerState, (_key, val) =>
+        val instanceof Uint8Array
+          ? { type: 'Uint8Array', hex: toHex(val) }
+          : val
+      )
+    );
 };
 if (isWeb) (window as unknown as { start: typeof start }).start = start;
 
