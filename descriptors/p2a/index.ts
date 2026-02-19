@@ -13,6 +13,7 @@ import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
 import { networks, Psbt, Transaction } from 'bitcoinjs-lib';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import { EsploraExplorer } from '@bitcoinerlab/explorer';
+import { fromHex, toHex } from 'uint8array-tools';
 
 const isWeb = typeof window !== 'undefined';
 const Log = (message: string) => {
@@ -33,8 +34,8 @@ const explorer = new EsploraExplorer({ url: ESPLORA_API });
 const { wpkhBIP32 } = descriptors.scriptExpressions;
 const { Output, BIP32 } = descriptors.DescriptorsFactory(secp256k1);
 const network = networks.regtest;
-const FEE = 500; //The fee for the package
-const P2A_SCRIPT = Buffer.from('51024e73', 'hex');
+const FEE = 500n; //The fee for the package
+const P2A_SCRIPT = fromHex('51024e73');
 
 // The TAPE testnet mines *exactly* every 10 minutes. Learn more: tape.rewindbitcoin.com
 // Yes... deterministic blocks. Because it's my blockchain, my rules 😎
@@ -84,7 +85,10 @@ Every reload reuses the same mnemonic for convenience.`);
   Log(`🔍 Wallet balance info: ${JSONf(sourceAddressInfo)}`);
   let fundingtTxId;
 
-  if (sourceAddressInfo.balance + sourceAddressInfo.unconfirmedBalance < FEE) {
+  if (
+    sourceAddressInfo.balance + sourceAddressInfo.unconfirmedBalance <
+    Number(FEE)
+  ) {
     Log(`💰 The wallet is empty. Let's request some funds...`);
     //New or empty wallet. Let's prepare the faucet request:
     const formData = new URLSearchParams();
@@ -110,11 +114,11 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     Log(`💰 Existing balance detected. Skipping faucet.`);
     // Wallet has funds. Find the last transaction that actually pays to this script.
     const txHistory = await explorer.fetchTxHistory({ address: sourceAddress });
-    const spkHex = sourceOutput.getScriptPubKey().toString('hex');
+    const spkHex = toHex(sourceOutput.getScriptPubKey());
 
     for (const { txId } of txHistory.reverse()) {
       const tx = Transaction.fromHex(await explorer.fetchTx(txId));
-      const vout = tx.outs.findIndex(o => o.script.toString('hex') === spkHex);
+      const vout = tx.outs.findIndex(o => toHex(o.script) === spkHex);
       if (vout !== -1) {
         fundingtTxId = txId;
         break;
@@ -176,9 +180,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
 
   const fundingTransaction = Transaction.fromHex(fundingTxHex);
   const fundingVout = fundingTransaction.outs.findIndex(
-    txOut =>
-      txOut.script.toString('hex') ===
-      sourceOutput.getScriptPubKey().toString('hex')
+    txOut => toHex(txOut.script) === toHex(sourceOutput.getScriptPubKey())
   );
   if (!fundingTransaction.outs[fundingVout]) throw new Error('Invalid vout');
 
@@ -198,7 +200,7 @@ Please retry (max 2 faucet requests per IP/address per minute).`
     vout: fundingVout,
     txHex: fundingTxHex
   });
-  parentPsbt.addOutput({ script: P2A_SCRIPT, value: 0 }); //vout: 0
+  parentPsbt.addOutput({ script: P2A_SCRIPT, value: 0n }); //vout: 0
   destOutput.updatePsbtAsOutput({ psbt: parentPsbt, value: destValue }); //vout: 1
 
   descriptors.signers.signBIP32({ psbt: parentPsbt, masterNode });
@@ -212,11 +214,11 @@ Please retry (max 2 faucet requests per IP/address per minute).`
   childPsbt.addInput({
     hash: parentTransaction.getId(),
     index: 0,
-    witnessUtxo: { script: P2A_SCRIPT, value: 0 }
+    witnessUtxo: { script: P2A_SCRIPT, value: 0n }
   });
   childPsbt.finalizeInput(0, () => ({
-    finalScriptSig: Buffer.alloc(0),
-    finalScriptWitness: Buffer.from([0x00]) // empty item
+    finalScriptSig: new Uint8Array(0),
+    finalScriptWitness: Uint8Array.of(0) // empty item
   }));
 
   // This spends both outputs from the parent

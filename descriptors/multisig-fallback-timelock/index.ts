@@ -32,7 +32,10 @@
 import './codesandboxFixes';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
-import { compilePolicy } from '@bitcoinerlab/miniscript';
+import {
+  compilePolicy,
+  ready as miniscriptPoliciesReady
+} from '@bitcoinerlab/miniscript-policies';
 import { Psbt, networks } from 'bitcoinjs-lib';
 import type { BIP32Interface } from 'bip32';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
@@ -99,7 +102,7 @@ const KEY_PATH = '/0';
 const FINAL_ADDRESS = isTestnet
   ? 'bcrt1qfz7vd3yxx0dcgdse36k4r66frhh4dkzpn3c3wx' //Tape testnet address
   : '3FYsjXPy81f96odShrKQoAiLFVmt6Tjf4g'; //Mainnet address
-const FEE = 300; //The vsize of this tx will be ~147 vbytes. Pay ~2 sats/vbyte
+const FEE = 300n; //The vsize of this tx will be ~147 vbytes. Pay ~2 sats/vbyte
 //Set the mnemonics with quotes or generateMnemonic() to create random ones:
 const USER_MNEMONIC = generateMnemonic();
 const COSIGNER_MNEMONIC = 'oil oil oil oil oil oil oil oil oil oil oil oil';
@@ -138,12 +141,10 @@ Log(`Read the description of this playground in the header of the editor on
   editing.<br/>Click "Run" at the bottom to start.`);
 Log(`Policy: <code>${POLICY(olderEncode({ blocks: BLOCKS }))}</code>`);
 Log(`Mnemonics 🤫: ${JSONf(mnemonics)}`);
-const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
-Log(`Compiled miniscript: <code>${miniscript}</code>`);
 
 const keyExpressions: { [key: string]: string } = {};
 const masterNodes: { [key: string]: BIP32Interface } = {};
-const pubKeys: { [key: string]: Buffer } = {};
+const pubKeys: { [key: string]: Uint8Array } = {};
 for (const key in mnemonics) {
   const mnemonic = mnemonics[key];
   const masterNode = BIP32.fromSeed(mnemonicToSeedSync(mnemonic), network);
@@ -157,33 +158,39 @@ for (const key in mnemonics) {
 }
 
 Log(`Key expressions: ${JSONf(keyExpressions)}`);
-//Let's replace the pub key @VARIABLES with their respective key expressions:
-const isolatedMiniscript = miniscript.replace(
-  /(@\w+)/g,
-  (match, key) => keyExpressions[key] || match
-);
-const descriptor = `wsh(${isolatedMiniscript})`;
-Log(`Descriptor: <code>${descriptor}</code>`);
-let signersPubKeys;
-const behaviourMsg = `Change this behavior by editing the
-  <code>FALLBACK_RECOVERY</code> setting.`;
-if (FALLBACK_RECOVERY) {
-  Log(`The code is currently set to use the <b>fallback recovery mechanism</b>.
-      ${behaviourMsg} Wait for the timelock to expire to access the funds.`);
-  signersPubKeys = [pubKeys['@FALLBACK']];
-} else {
-  Log(`The code is currently set to use <b>normal cooperation between USER and
-      COSIGNER</b>. ${behaviourMsg}`);
-  signersPubKeys = [pubKeys['@COSIGNER'], pubKeys['@USER']];
-}
-const output = new Output({
-  descriptor,
-  network,
-  signersPubKeys: signersPubKeys as Buffer[]
-});
-const walletAddress = output.getAddress();
-Log(`Wallet address: ${walletAddress}`);
+
 window.start = async () => {
+  await miniscriptPoliciesReady;
+  const { miniscript } = compilePolicy(POLICY(olderEncode({ blocks: BLOCKS })));
+  Log(`Compiled miniscript: <code>${miniscript}</code>`);
+  const isolatedMiniscript = miniscript.replace(
+    /(@\w+)/g,
+    (match: string, key: string) => keyExpressions[key] || match
+  );
+  const descriptor = `wsh(${isolatedMiniscript})`;
+  Log(`Descriptor: <code>${descriptor}</code>`);
+
+  const behaviourMsg = `Change this behavior by editing the
+  <code>FALLBACK_RECOVERY</code> setting.`;
+  let signersPubKeys;
+  if (FALLBACK_RECOVERY) {
+    Log(`The code is currently set to use the <b>fallback recovery mechanism</b>.
+      ${behaviourMsg} Wait for the timelock to expire to access the funds.`);
+    signersPubKeys = [pubKeys['@FALLBACK']];
+  } else {
+    Log(`The code is currently set to use <b>normal cooperation between USER and
+      COSIGNER</b>. ${behaviourMsg}`);
+    signersPubKeys = [pubKeys['@COSIGNER'], pubKeys['@USER']];
+  }
+
+  const output = new Output({
+    descriptor,
+    network,
+    signersPubKeys: signersPubKeys as Uint8Array[]
+  });
+  const walletAddress = output.getAddress();
+  Log(`Wallet address: ${walletAddress}`);
+
   const currentBlockHeight = parseInt(
     await (await fetch(`${ESPLORA_API}/blocks/tip/height`)).text(),
     10
@@ -199,7 +206,7 @@ window.start = async () => {
     const txHex = await (
       await fetch(`${ESPLORA_API}/tx/${utxo?.[0].txid}/hex`)
     ).text();
-    const inputValue = utxo[0].value;
+    const inputValue = BigInt(utxo[0].value);
     const psbt = new Psbt({ network });
     const inputFinalizer = output.updatePsbtAsInput({
       psbt,

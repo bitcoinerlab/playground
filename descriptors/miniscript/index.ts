@@ -4,9 +4,13 @@
 import './codesandboxFixes';
 import * as secp256k1 from '@bitcoinerlab/secp256k1';
 import * as descriptors from '@bitcoinerlab/descriptors';
-import { compilePolicy } from '@bitcoinerlab/miniscript';
+import {
+  compilePolicy,
+  ready as miniscriptPoliciesReady
+} from '@bitcoinerlab/miniscript-policies';
 import { Psbt, networks } from 'bitcoinjs-lib';
 import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
+import { toHex } from 'uint8array-tools';
 // @ts-ignore
 import { encode as afterEncode } from 'bip65';
 import { readFileSync, writeFileSync, unlinkSync } from 'fs';
@@ -92,6 +96,7 @@ const start = async () => {
 
   //Create the descriptor if this is a new run
   if (!wshDescriptor) {
+    await miniscriptPoliciesReady;
     const currentBlockHeight = parseInt(
       await (await fetch(`${ESPLORA_API}/blocks/tip/height`)).text()
     );
@@ -109,7 +114,7 @@ const start = async () => {
           keyPath: WSH_KEY_PATH
         })
       )
-      .replace('@emergencyKey', emergencyPair.publicKey.toString('hex'))})`;
+      .replace('@emergencyKey', toHex(emergencyPair.publicKey))})`;
     if (isWeb) localStorage.setItem('frozenDescriptor', wshDescriptor);
     else writeFileSync('.frozenDescriptor', wshDescriptor);
   }
@@ -129,7 +134,7 @@ const start = async () => {
     const txHex = await (
       await fetch(`${ESPLORA_API}/tx/${utxo?.[0].txid}/hex`)
     ).text();
-    const inputValue = utxo[0].value;
+    const inputValue = BigInt(utxo[0].value);
     const psbt = new Psbt({ network });
     const inputFinalizer = wshOutput.updatePsbtAsInput({
       psbt,
@@ -146,7 +151,7 @@ const start = async () => {
           : 'bcrt1qfz7vd3yxx0dcgdse36k4r66frhh4dkzpn3c3wx'
       })`,
       network
-    }).updatePsbtAsOutput({ psbt, value: inputValue - 1000 });
+    }).updatePsbtAsOutput({ psbt, value: inputValue - 1000n });
 
     //Now sign the PSBT with the BIP32 node (the software wallet)
     if (EMERGENCY_RECOVERY)
