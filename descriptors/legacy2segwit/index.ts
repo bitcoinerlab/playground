@@ -42,7 +42,11 @@ console.log(`We start with:`, { address: legacyOutput.getAddress(), TXID });
     txOut => txOut.scriptpubkey === toHex(legacyOutput.getScriptPubKey())
   );
   const initialValue = BigInt(txOuts[vout]!.value); //This must be: 1679037
-  console.log('This is the utxo to spend :', { txHex, vout, initialValue });
+  console.log('This is the utxo to spend :', {
+    txHex,
+    vout,
+    initialValue: `${initialValue}n`
+  });
 
   //Define the Segwit descriptor where we will move the funds:
   const segwitOutput = new Output({
@@ -62,7 +66,10 @@ console.log(`We start with:`, { address: legacyOutput.getAddress(), TXID });
   const finalValue = initialValue - FEE;
   segwitOutput.updatePsbtAsOutput({ psbt, value: finalValue });
   const finalAddress = segwitOutput.getAddress();
-  console.log('Move the funds to:', { finalAddress, finalValue });
+  console.log('Move the funds to:', {
+    finalAddress,
+    finalValue: `${finalValue}n`
+  });
 
   //Sign the transaction, finalize it and submit it to the miners:
   descriptors.signers.signBIP32({ psbt, masterNode });
