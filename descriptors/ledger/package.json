@@ -1,7 +1,7 @@
 {
   "name": "playground",
   "type": "module",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "scripts": {
     "descriptors/legacy2segwit": "tsx ./descriptors/legacy2segwit/index.ts",
     "descriptors/miniscript": "tsx ./descriptors/miniscript/index.ts",
@@ -17,7 +17,7 @@
   "dependencies": {
     "@bitcoinerlab/btcmessage": "^4.0.1",
     "@bitcoinerlab/coinselect": "^2.0.0",
-    "@bitcoinerlab/descriptors": "^3.0.4",
+    "@bitcoinerlab/descriptors": "^3.0.5",
     "@bitcoinerlab/discovery": "^2.0.0",
     "@bitcoinerlab/explorer": "^1.0.0",
     "@bitcoinerlab/miniscript": "^2.0.0",

@@ -68,6 +68,10 @@ const masterNode = BIP32.fromSeed(mnemonicToSeedSync(SOFT_MNEMONIC), network);
 let transport: any = null;
 const start = async () => {
   if (!transport) {
+    // CodeSandbox requires `infiniteLoopProtection: false` in
+    // `sandbox.config.json`.
+    // CodeSandbox's loop-protection transform crashes while transpiling
+    // `@ledgerhq/hw-transport` (`lib-es/Transport.js`).
     let Transport = await import(
       `@ledgerhq/hw-transport-${isWeb ? 'web' : 'node-'}hid`
     );
