@@ -1,7 +1,7 @@
 {
   "name": "playground",
   "type": "module",
-  "version": "3.0.5",
+  "version": "3.0.6",
   "scripts": {
     "descriptors/legacy2segwit": "tsx ./descriptors/legacy2segwit/index.ts",
     "descriptors/miniscript": "tsx ./descriptors/miniscript/index.ts",
@@ -26,6 +26,7 @@
     "@ledgerhq/hw-transport-node-hid": "^6.29.14",
     "@ledgerhq/hw-transport-webhid": "^6.30.9",
     "@ledgerhq/ledger-bitcoin": "^0.3.0",
+    "bip174": "^2.1.1",
     "@noble/ciphers": "^2.1.1",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^1.8.0",
