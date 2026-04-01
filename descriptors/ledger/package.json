@@ -1,7 +1,7 @@
 {
   "name": "playground",
   "type": "module",
-  "version": "3.0.6",
+  "version": "3.1.2",
   "scripts": {
     "descriptors/legacy2segwit": "tsx ./descriptors/legacy2segwit/index.ts",
     "descriptors/miniscript": "tsx ./descriptors/miniscript/index.ts",
@@ -17,7 +17,7 @@
   "dependencies": {
     "@bitcoinerlab/btcmessage": "^4.0.1",
     "@bitcoinerlab/coinselect": "^2.0.0",
-    "@bitcoinerlab/descriptors": "^3.0.5",
+    "@bitcoinerlab/descriptors": "^3.1.7",
     "@bitcoinerlab/discovery": "^2.0.0",
     "@bitcoinerlab/explorer": "^1.0.0",
     "@bitcoinerlab/miniscript": "^2.0.0",
@@ -26,10 +26,10 @@
     "@ledgerhq/hw-transport-node-hid": "^6.29.14",
     "@ledgerhq/hw-transport-webhid": "^6.30.9",
     "@ledgerhq/ledger-bitcoin": "^0.3.0",
-    "bip174": "^2.1.1",
     "@noble/ciphers": "^2.1.1",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^1.8.0",
+    "bip174": "^2.1.1",
     "bip39": "^3.1.0",
     "bip65": "^1.0.3",
     "create-hash": "^1.2.0",
@@ -37,6 +37,7 @@
     "pushdata-bitcoin": "^1.0.1",
     "randombytes": "^2.1.0",
     "uint8array-tools": "^0.0.9",
+    "valibot": "1.2.0",
     "varuint-bitcoin": "^2.0.0"
   },
   "comment": [
